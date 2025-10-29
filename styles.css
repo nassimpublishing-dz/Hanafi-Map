@@ -1,0 +1,15 @@
+/* css/styles.css */
+html, body { height:100%; margin:0; font-family: Arial, sans-serif; }
+header { text-align:left; }
+#map { height: calc(100vh - 44px); width:100%; }
+
+/* Styles du popup form */
+.leaflet-popup-content form { display:flex; gap:6px; }
+.leaflet-popup-content input[type="text"] { padding:6px; flex:1; border:1px solid #ccc; border-radius:4px; }
+.leaflet-popup-content button { padding:6px 10px; background:#2b6cb0; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+.leaflet-popup-content button:hover { opacity:0.95; }
+
+/* Controls (moved to CSS file for maintainability) */
+#controls { position:absolute; top:60px; left:10px; z-index:9999; }
+#controls button { padding:8px 12px; margin-right:6px; background:#008cff; color:#fff; border:none; border-radius:6px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.2); }
+#controls button:hover { opacity:0.95; }
