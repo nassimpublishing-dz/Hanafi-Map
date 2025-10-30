@@ -1,4 +1,4 @@
-// ? js/app.js � Version A (le camion = TA position r�elle) + recalcul auto si d�viation 
+// ✅ js/app.js — Version finale stable (camion = position réelle)
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -9,28 +9,28 @@ const GRAPHHOPPER_KEY = "2d4407fe-6ae8-4008-a2c7-c1ec034c8f10";
 const map = L.map('map', { center: defaultCenter, zoom: defaultZoom });
 
 const normalTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '� OpenStreetMap contributors'
+  attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
 const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-  maxZoom: 20, subdomains: ['mt0','mt1','mt2','mt3']
+  maxZoom: 20,
+  subdomains: ['mt0','mt1','mt2','mt3']
 });
 
 /* ========== ICONS ========== */
-// ?? Icone Client (Store)
+// 🏪 Icône client
 const clientIcon = L.icon({
   iconUrl: "https://cdn-icons-png.flaticon.com/512/535/535239.png",
   iconSize: [42, 42],
   iconAnchor: [21, 42]
 });
 
-// ?? Icone Livreur (Camion)
+// 🚚 Icône livreur
 const livreurIcon = L.icon({
-  iconUrl: "../livraison-map/camion-dexpedition.png",
+  iconUrl: "camion-dexpedition.png", // ✅ Corrigé : chemin direct vers la racine
   iconSize: [50, 50],
   iconAnchor: [25, 50]
 });
-
 
 /* ========== STATE ========== */
 const clientsLayer = L.layerGroup().addTo(map);
@@ -114,7 +114,7 @@ function ajouterClient(lat,lng){
   ref.set({ name:n, lat, lng, createdAt:Date.now() });
 }
 function supprimerClient(id){
-  if(!confirm("?? Supprimer ce client ?")) return;
+  if(!confirm("❌ Supprimer ce client ?")) return;
   db.ref(`clients/${id}`).remove();
   clearItinerary();
 }
@@ -126,26 +126,26 @@ function popupClientHtml(c){
   return `
     <div style="font-size:13px;">
       <b>${escapeHtml(c.name)}</b><br>
-      <small style="color:#555">Ajout� : ${new Date(c.createdAt).toLocaleString()}</small><br><br>
+      <small style="color:#555">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br><br>
 
       <button onclick="calculerItineraire(${c.lat}, ${c.lng})"
         style="width:100%;padding:6px;background:#0074FF;color:#fff;border:none;border-radius:4px">
-        Itin�raire
+        🚗 Itinéraire
       </button><br><br>
 
       <button onclick="clearItinerary()" 
         style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px">
-        ? Enlever l�itin�raire
+        🧭 Enlever l’itinéraire
       </button><br><br>
 
       <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')"
         style="width:100%;padding:6px;background:#009688;color:#fff;border:none;border-radius:4px">
-        ?? Modifier nom
+        ✏️ Modifier nom
       </button><br><br>
 
       <button onclick="supprimerClient('${c.id}')"
         style="width:100%;padding:6px;background:#e53935;color:#fff;border:none;border-radius:4px">
-        ??? Supprimer
+        🗑️ Supprimer
       </button>
     </div>
   `;
@@ -181,7 +181,7 @@ async function calculerItineraire(lat,lng){
   if(!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
   currentDestination={lat,lng};
-  showRouteSummary("?? Chargement...");
+  showRouteSummary("⏳ Calcul de l'itinéraire...");
 
   try{
     const url=`https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${lat},${lng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
@@ -196,12 +196,12 @@ async function calculerItineraire(lat,lng){
     map.fitBounds(routePolyline.getBounds(),{padding:[60,60],maxZoom:17});
 
     const s=extractSummary(data)||{};
-    showRouteSummary(`?? ${(s.dist/1000).toFixed(2)} km � ? ${Math.max(1,Math.round(s.time/60000))} min`);
+    showRouteSummary(`📍 ${(s.dist/1000).toFixed(2)} km — ⏱️ ${Math.max(1,Math.round(s.time/60000))} min`);
     lastRecalcTime=Date.now();
 
   }catch(e){
     hideRouteSummary();
-    if(confirm("Itin�raire indisponible.\n\nOuvrir Google Maps ?")){
+    if(confirm("Itinéraire indisponible.\n\nOuvrir Google Maps ?")){
       window.open(`https://www.google.com/maps/dir/?api=1&origin=${me.lat},${me.lng}&destination=${lat},${lng}`);
     }
   }
@@ -243,7 +243,7 @@ $id('toggleView')?.addEventListener('click',()=>{
                 :(map.addLayer(normalTiles),map.removeLayer(satelliteTiles));
 });
 function centrerSurMoi(){
-  if(!userMarker) return alert("Localisation en cours�");
+  if(!userMarker) return alert("Localisation en cours…");
   map.setView(userMarker.getLatLng(),16);
 }
 $id('myPosition')?.addEventListener('click',centrerSurMoi);
@@ -257,4 +257,3 @@ window.ajouterClient=ajouterClient;
 window.supprimerClient=supprimerClient;
 window.renommerClient=renommerClient;
 window.centrerSurMoi=centrerSurMoi;
-
