@@ -1,4 +1,4 @@
-// === Geotrack Livreurs - Version avec recherche multi-résultats ===
+// ✅ app.js — Version finale : recherche "début de nom" + icônes agrandies (pas d'ouverture automatique de popup)
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -18,22 +18,24 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
 });
 
 /* ========== ICONS ========== */
+// Icône client (magasin) - chemin absolu GitHub Pages
 const clientIcon = L.icon({
   iconUrl: "/Hanafi-Map/magasin-delectronique.png",
   iconSize: [42, 42],
   iconAnchor: [21, 42]
 });
+// Icône client agrandie (pour la mise en évidence)
+const clientIconLarge = L.icon({
+  iconUrl: "/Hanafi-Map/magasin-delectronique.png",
+  iconSize: [64, 64],   // taille plus grande
+  iconAnchor: [32, 64]
+});
 
+// Icône livreur (camion) - chemin absolu GitHub Pages
 const livreurIcon = L.icon({
   iconUrl: "/Hanafi-Map/camion-dexpedition.png",
   iconSize: [50, 50],
   iconAnchor: [25, 50]
-});
-
-const highlightIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/190/190411.png", // icône jaune de surbrillance
-  iconSize: [48, 48],
-  iconAnchor: [24, 48]
 });
 
 /* ========== STATE ========== */
@@ -46,9 +48,11 @@ let routePolyline = null;
 let lastRecalcTime = 0;
 const RECALL_MIN_INTERVAL_MS = 5000;
 const RECALC_THRESHOLD_METERS = 45;
+
 const routeSummaryEl = document.getElementById('routeSummary');
 
-const clientMarkers = []; // tableau de tous les marqueurs clients
+/* tableau contenant tous les marqueurs clients (pour la recherche) */
+const clientMarkers = [];
 
 /* ========== HELPERS ========== */
 const $id = id => document.getElementById(id);
@@ -68,7 +72,62 @@ function clearItinerary(){
   currentDestination = null;
 }
 
+/* ========== GEO HELPERS (distance, etc.) ========== */
+function toRad(v){ return v * Math.PI / 180; }
+function haversineMeters(aLat, aLng, bLat, bLng){
+  const R = 6371000;
+  const dLat = toRad(bLat - aLat);
+  const dLon = toRad(bLng - aLng);
+  const lat1 = toRad(aLat), lat2 = toRad(bLat);
+  const sinDlat = Math.sin(dLat/2), sinDlon = Math.sin(dLon/2);
+  const aa = sinDlat*sinDlat + Math.cos(lat1)*Math.cos(lat2)*sinDlon*sinDlon;
+  return 2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
+}
+function pointToSegmentDistanceMeters(ptLat, ptLng, vLat, vLng, wLat, wLng){
+  const deg2m = 111320;
+  const meanLat = (vLat + wLat + ptLat) / 3 * Math.PI/180;
+  const cosLat = Math.cos(meanLat);
+  const ax = vLng * cosLat * deg2m, ay = vLat * deg2m;
+  const bx = wLng * cosLat * deg2m, by = wLat * deg2m;
+  const px = ptLng * cosLat * deg2m, py = ptLat * deg2m;
+  const dx = bx - ax, dy = by - ay;
+  if(dx === 0 && dy === 0){
+    const ddx=px-ax, ddy=py-ay;
+    return Math.sqrt(ddx*ddx + ddy*ddy);
+  }
+  const t = ((px-ax)*dx + (py-ay)*dy)/(dx*dx+dy*dy);
+  const tc = Math.max(0, Math.min(1, t));
+  const projx = ax + tc*dx, projy = ay + tc*dy;
+  const ddx = px - projx, ddy = py - projy;
+  return Math.sqrt(ddx*ddx + ddy*ddy);
+}
+function distancePointToPolylineMeters(lat,lng,latlngs){
+  if(!latlngs || latlngs.length < 2) return Infinity;
+  let minD = Infinity;
+  for(let i=0;i<latlngs.length-1;i++){
+    const v = latlngs[i], w = latlngs[i+1];
+    const d = pointToSegmentDistanceMeters(lat,lng, v[0], v[1], w[0], w[1]);
+    if(d < minD) minD = d;
+  }
+  return minD;
+}
+
 /* ========== CRUD CLIENTS ========== */
+function ajouterClient(lat,lng){
+  const name = prompt("Nom du client ?");
+  if(!name) return;
+  const ref = db.ref('clients').push();
+  ref.set({ name, lat, lng, createdAt: Date.now() });
+}
+function supprimerClient(id){
+  if(!confirm("❌ Supprimer ce client ?")) return;
+  db.ref(`clients/${id}`).remove();
+  clearItinerary();
+}
+function renommerClient(id, oldName){
+  const n = prompt("Nouveau nom :", oldName);
+  if(n) db.ref(`clients/${id}/name`).set(n);
+}
 function popupClientHtml(c){
   return `
     <div style="font-size:13px;">
@@ -82,7 +141,7 @@ function popupClientHtml(c){
 
       <button onclick="clearItinerary()" 
         style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px">
-        ❌ Enlever
+        🧭 Enlever l’itinéraire
       </button><br><br>
 
       <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')"
@@ -98,7 +157,13 @@ function popupClientHtml(c){
   `;
 }
 
+/* ========== FIREBASE LISTEN ========== */
 function listenClients(){
+  if(!window.db){
+    console.warn("DB non initialisée");
+    return;
+  }
+
   db.ref('clients').on('value', snap=>{
     clientsLayer.clearLayers();
     clientMarkers.length = 0;
@@ -106,86 +171,160 @@ function listenClients(){
     if(!data) return;
 
     Object.entries(data).forEach(([id,c])=>{
-      if(!c.lat || !c.lng) return;
-      c.id=id;
-      const marker = L.marker([c.lat,c.lng],{icon:clientIcon})
-        .bindPopup(popupClientHtml(c))
-        .addTo(clientsLayer);
-      marker.clientName = (c.name || "").toLowerCase();
-      clientMarkers.push(marker);
+      if(!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return;
+      c.id = id;
+      const m = L.marker([c.lat, c.lng], { icon: clientIcon });
+      m.bindPopup(popupClientHtml(c), { autoClose: true, closeOnClick: true });
+      // store helper fields for searching
+      m.clientName = (c.name || "").toLowerCase();
+      m.clientId = id;
+      clientsLayer.addLayer(m);
+      clientMarkers.push(m);
     });
+  }, err => {
+    console.error("Erreur lecture clients:", err);
   });
 }
 
-/* ========== ROUTING + GEO ========== */
-// (idem ton ancienne version)
-async function calculerItineraire(lat,lng){
+/* ========== ROUTING (GraphHopper primary) ========== */
+function parseGraphHopper(data){
+  const coords = data.paths?.[0]?.points?.coordinates;
+  return coords ? coords.map(p => [p[1], p[0]]) : null;
+}
+function extractSummary(d){
+  const p = d.paths?.[0];
+  return p ? { dist: p.distance || 0, time: p.time || 0 } : { dist:0, time:0 };
+}
+
+async function calculerItineraire(destLat, destLng){
   if(!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
-  currentDestination={lat,lng};
+  currentDestination = { lat: destLat, lng: destLng };
   showRouteSummary("⏳ Calcul de l'itinéraire...");
 
-  try{
-    const url=`https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${lat},${lng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
-    const res=await fetch(url);
-    if(!res.ok) throw new Error(res.status);
-    const data=await res.json();
-    const pts=data.paths?.[0]?.points?.coordinates?.map(p=>[p[1],p[0]]);
+  try {
+    const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('GH ' + res.status);
+    const data = await res.json();
+    const pts = parseGraphHopper(data);
+    if(!pts) throw new Error('no geometry');
     routeLayer.clearLayers();
-    routePolyline=L.polyline(pts,{color:'#0074FF',weight:5}).addTo(routeLayer);
-    map.fitBounds(routePolyline.getBounds(),{padding:[60,60],maxZoom:17});
-    const s=data.paths?.[0];
-    showRouteSummary(`📏 ${(s.distance/1000).toFixed(2)} km — ⏱️ ${Math.max(1,Math.round(s.time/60000))} min`);
-    lastRecalcTime=Date.now();
-  }catch(e){
+    routePolyline = L.polyline(pts, { color: '#0074FF', weight: 5, opacity: 0.95 }).addTo(routeLayer);
+    map.fitBounds(routePolyline.getBounds(), { padding: [60,60], maxZoom: 17 });
+    const s = extractSummary(data);
+    showRouteSummary(`📍 ${(s.dist/1000).toFixed(2)} km — ⏱ ${Math.max(1,Math.round(s.time/60000))} min`);
+    lastRecalcTime = Date.now();
+  } catch (err) {
+    console.warn("GraphHopper error", err);
     hideRouteSummary();
-    alert("Itinéraire non disponible.");
+    if(confirm("Itinéraire indisponible.\n\nOuvrir Google Maps ?")){
+      const mepos = userMarker.getLatLng();
+      window.open(`https://www.google.com/maps/dir/?api=1&origin=${mepos.lat},${mepos.lng}&destination=${destLat},${destLng}`, '_blank');
+    }
   }
 }
 
-navigator.geolocation.watchPosition(pos=>{
-  const lat=pos.coords.latitude,lng=pos.coords.longitude;
-  const t=[lat,lng];
-  if(!userMarker){
-    userMarker=L.marker(t,{icon:livreurIcon}).addTo(map);
-    map.setView(t,16);
-  }else userMarker.setLatLng(t);
-  if(window.db) db.ref('livreur').set({lat,lng,updatedAt:Date.now()});
-}, e=>console.warn(e), {enableHighAccuracy:true,maximumAge:2000,timeout:10000});
+/* ========== DEVIATION CHECK & RECALC ========== */
+function checkDeviationAndRecalc(){
+  if(!currentDestination || !routePolyline || !userMarker) return;
+  const latlngs = routePolyline.getLatLngs().map(ll => [ll.lat, ll.lng]);
+  const pos = userMarker.getLatLng();
+  const dist = distancePointToPolylineMeters(pos.lat, pos.lng, latlngs);
+  if(dist > RECALC_THRESHOLD_METERS && (Date.now() - lastRecalcTime) > RECALL_MIN_INTERVAL_MS){
+    lastRecalcTime = Date.now();
+    calculerItineraire(currentDestination.lat, currentDestination.lng);
+  }
+}
 
-/* ========== RECHERCHE CLIENTS (multi-résultats) ========== */
-const searchInput = document.getElementById("searchInput");
+/* ========== GEOLOCATION WATCH (robuste) ========== */
+if('geolocation' in navigator){
+  navigator.geolocation.watchPosition(pos=>{
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    const target = [lat, lng];
 
-searchInput.addEventListener("input", function () {
-  const searchText = this.value.toLowerCase().trim();
-  clientMarkers.forEach(m => {
-    const match = m.clientName.includes(searchText) && searchText !== "";
-    m.setOpacity(match || searchText === "" ? 1 : 0.3);
-    if (match) {
-      m.setIcon(highlightIcon);
-      m.openPopup();
+    if(!userMarker){
+      userMarker = L.marker(target, { icon: livreurIcon }).addTo(map);
+      map.setView(target, 16);
     } else {
-      m.setIcon(clientIcon);
-      m.closePopup();
+      userMarker.setLatLng(target);
     }
+
+    try { checkDeviationAndRecalc(); } catch(e){ console.warn(e); }
+
+    if(window.db){
+      try { db.ref('livreur').set({ lat, lng, updatedAt: Date.now() }); } catch(e){ /* ignore */ }
+    }
+  }, err => {
+    console.warn("GEO error", err);
+  }, { enableHighAccuracy:true, maximumAge:2000, timeout:10000 });
+} else {
+  console.warn("Géoloc non disponible");
+}
+
+/* ========== RECHERCHE CLIENTS (début de nom) ========== */
+/* Comportement demandé :
+   - quand l'utilisateur tape : ne PAS ouvrir les popups automatiquement
+   - mettre en évidence (icône agrandie) tous les clients dont le nom commence par le texte tapé (startsWith)
+   - masquer / rendre translucides les autres
+*/
+(function initSearch() {
+  const searchInput = document.getElementById('searchInput');
+  if(!searchInput) return;
+
+  searchInput.addEventListener('input', () => {
+    const txt = (searchInput.value || '').toLowerCase().trim();
+    if(txt === ''){
+      // Reset : tout le monde visible, icône normale
+      clientMarkers.forEach(m => {
+        m.setOpacity(1);
+        m.setIcon(clientIcon);
+        // do not open/close popups automatically
+      });
+      return;
+    }
+
+    clientMarkers.forEach(m => {
+      const name = m.clientName || '';
+      const match = name.startsWith(txt); // beginsWith as requested
+      if(match){
+        m.setOpacity(1);
+        m.setIcon(clientIconLarge); // agrandi
+        // do not open popup automatically; keep user click for popup
+      } else {
+        m.setOpacity(0.25); // make other markers faint
+        m.setIcon(clientIcon);  // normal icon small
+        m.closePopup();
+      }
+    });
   });
-});
+})();
 
-/* ========== UI ========== */
+/* ========== UI BINDINGS ========== */
 $id('toggleView')?.addEventListener('click',()=>{
-  satelliteMode=!satelliteMode;
-  satelliteMode?(map.addLayer(satelliteTiles),map.removeLayer(normalTiles))
-                :(map.addLayer(normalTiles),map.removeLayer(satelliteTiles));
+  satelliteMode = !satelliteMode;
+  satelliteMode ? (map.addLayer(satelliteTiles), map.removeLayer(normalTiles))
+                : (map.addLayer(normalTiles), map.removeLayer(satelliteTiles));
 });
-$id('myPosition')?.addEventListener('click',()=>{
-  if(!userMarker) return alert("Localisation en cours…");
-  map.setView(userMarker.getLatLng(),16);
+function centrerSurMoi(){
+  if(!userMarker) return alert("Localisation en cours...");
+  map.setView(userMarker.getLatLng(), 16);
+}
+$id('myPosition')?.addEventListener('click', centrerSurMoi);
+
+/* contextmenu -> ajouter client */
+map.on('contextmenu', e => {
+  ajouterClient(e.latlng.lat, e.latlng.lng);
 });
 
-map.on('contextmenu',e=>{
-  const n=prompt("Nom du client ?");
-  if(!n) return;
-  db.ref('clients').push({ name:n, lat:e.latlng.lat, lng:e.latlng.lng, createdAt:Date.now() });
-});
-
+/* start */
 listenClients();
+map.on('movestart zoomstart', ()=>hideRouteSummary());
+
+/* expose for debug */
+window.ajouterClient = ajouterClient;
+window.supprimerClient = supprimerClient;
+window.renommerClient = renommerClient;
+window.calculerItineraire = calculerItineraire;
+window.clearItinerary = clearItinerary;
+window.centrerSurMoi = centrerSurMoi;
