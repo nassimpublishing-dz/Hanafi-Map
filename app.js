@@ -1,4 +1,4 @@
-// ✅ app.js — Version finale : recherche "début de nom" + icônes agrandies (pas d'ouverture automatique de popup)
+// ✅ app.js — Recherche avec liste de résultats cliquables
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -18,27 +18,19 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
 });
 
 /* ========== ICONS ========== */
-// Icône client (magasin) - chemin absolu GitHub Pages
 const clientIcon = L.icon({
   iconUrl: "/Hanafi-Map/magasin-delectronique.png",
   iconSize: [42, 42],
   iconAnchor: [21, 42]
 });
-// Icône client agrandie (pour la mise en évidence)
-const clientIconLarge = L.icon({
-  iconUrl: "/Hanafi-Map/magasin-delectronique.png",
-  iconSize: [64, 64],   // taille plus grande
-  iconAnchor: [32, 64]
-});
 
-// Icône livreur (camion) - chemin absolu GitHub Pages
 const livreurIcon = L.icon({
   iconUrl: "/Hanafi-Map/camion-dexpedition.png",
   iconSize: [50, 50],
   iconAnchor: [25, 50]
 });
 
-/* ========== STATE ========== */
+/* ========== LAYERS & STATE ========== */
 const clientsLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 let userMarker = null;
@@ -48,31 +40,13 @@ let routePolyline = null;
 let lastRecalcTime = 0;
 const RECALL_MIN_INTERVAL_MS = 5000;
 const RECALC_THRESHOLD_METERS = 45;
-
-const routeSummaryEl = document.getElementById('routeSummary');
-
-/* tableau contenant tous les marqueurs clients (pour la recherche) */
 const clientMarkers = [];
 
-/* ========== HELPERS ========== */
+/* ========== UTILITAIRES ========== */
 const $id = id => document.getElementById(id);
 function escapeHtml(s){
   return (s||"").toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
-function showRouteSummary(txt){
-  if(routeSummaryEl){ routeSummaryEl.style.display='flex'; routeSummaryEl.innerHTML = txt; }
-}
-function hideRouteSummary(){
-  if(routeSummaryEl){ routeSummaryEl.style.display='none'; routeSummaryEl.innerHTML = ''; }
-}
-function clearItinerary(){
-  routeLayer.clearLayers();
-  routePolyline = null;
-  hideRouteSummary();
-  currentDestination = null;
-}
-
-/* ========== GEO HELPERS (distance, etc.) ========== */
 function toRad(v){ return v * Math.PI / 180; }
 function haversineMeters(aLat, aLng, bLat, bLng){
   const R = 6371000;
@@ -83,36 +57,8 @@ function haversineMeters(aLat, aLng, bLat, bLng){
   const aa = sinDlat*sinDlat + Math.cos(lat1)*Math.cos(lat2)*sinDlon*sinDlon;
   return 2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
 }
-function pointToSegmentDistanceMeters(ptLat, ptLng, vLat, vLng, wLat, wLng){
-  const deg2m = 111320;
-  const meanLat = (vLat + wLat + ptLat) / 3 * Math.PI/180;
-  const cosLat = Math.cos(meanLat);
-  const ax = vLng * cosLat * deg2m, ay = vLat * deg2m;
-  const bx = wLng * cosLat * deg2m, by = wLat * deg2m;
-  const px = ptLng * cosLat * deg2m, py = ptLat * deg2m;
-  const dx = bx - ax, dy = by - ay;
-  if(dx === 0 && dy === 0){
-    const ddx=px-ax, ddy=py-ay;
-    return Math.sqrt(ddx*ddx + ddy*ddy);
-  }
-  const t = ((px-ax)*dx + (py-ay)*dy)/(dx*dx+dy*dy);
-  const tc = Math.max(0, Math.min(1, t));
-  const projx = ax + tc*dx, projy = ay + tc*dy;
-  const ddx = px - projx, ddy = py - projy;
-  return Math.sqrt(ddx*ddx + ddy*ddy);
-}
-function distancePointToPolylineMeters(lat,lng,latlngs){
-  if(!latlngs || latlngs.length < 2) return Infinity;
-  let minD = Infinity;
-  for(let i=0;i<latlngs.length-1;i++){
-    const v = latlngs[i], w = latlngs[i+1];
-    const d = pointToSegmentDistanceMeters(lat,lng, v[0], v[1], w[0], w[1]);
-    if(d < minD) minD = d;
-  }
-  return minD;
-}
 
-/* ========== CRUD CLIENTS ========== */
+/* ========== CLIENT CRUD ========== */
 function ajouterClient(lat,lng){
   const name = prompt("Nom du client ?");
   if(!name) return;
@@ -133,22 +79,18 @@ function popupClientHtml(c){
     <div style="font-size:13px;">
       <b>${escapeHtml(c.name)}</b><br>
       <small style="color:#555">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br><br>
-
       <button onclick="calculerItineraire(${c.lat}, ${c.lng})"
         style="width:100%;padding:6px;background:#0074FF;color:#fff;border:none;border-radius:4px">
         🚗 Itinéraire
       </button><br><br>
-
       <button onclick="clearItinerary()" 
         style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px">
         🧭 Enlever l’itinéraire
       </button><br><br>
-
       <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')"
         style="width:100%;padding:6px;background:#009688;color:#fff;border:none;border-radius:4px">
         ✏️ Modifier nom
       </button><br><br>
-
       <button onclick="supprimerClient('${c.id}')"
         style="width:100%;padding:6px;background:#e53935;color:#fff;border:none;border-radius:4px">
         🗑️ Supprimer
@@ -157,13 +99,8 @@ function popupClientHtml(c){
   `;
 }
 
-/* ========== FIREBASE LISTEN ========== */
+/* ========== FIREBASE LISTENER ========== */
 function listenClients(){
-  if(!window.db){
-    console.warn("DB non initialisée");
-    return;
-  }
-
   db.ref('clients').on('value', snap=>{
     clientsLayer.clearLayers();
     clientMarkers.length = 0;
@@ -174,157 +111,134 @@ function listenClients(){
       if(!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return;
       c.id = id;
       const m = L.marker([c.lat, c.lng], { icon: clientIcon });
-      m.bindPopup(popupClientHtml(c), { autoClose: true, closeOnClick: true });
-      // store helper fields for searching
+      m.bindPopup(popupClientHtml(c));
       m.clientName = (c.name || "").toLowerCase();
       m.clientId = id;
+      m.clientData = c;
       clientsLayer.addLayer(m);
       clientMarkers.push(m);
     });
-  }, err => {
-    console.error("Erreur lecture clients:", err);
   });
 }
 
-/* ========== ROUTING (GraphHopper primary) ========== */
-function parseGraphHopper(data){
-  const coords = data.paths?.[0]?.points?.coordinates;
-  return coords ? coords.map(p => [p[1], p[0]]) : null;
-}
-function extractSummary(d){
-  const p = d.paths?.[0];
-  return p ? { dist: p.distance || 0, time: p.time || 0 } : { dist:0, time:0 };
-}
-
+/* ========== ROUTING ========== */
 async function calculerItineraire(destLat, destLng){
   if(!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
   currentDestination = { lat: destLat, lng: destLng };
-  showRouteSummary("⏳ Calcul de l'itinéraire...");
 
   try {
     const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
     const res = await fetch(url);
-    if(!res.ok) throw new Error('GH ' + res.status);
+    if(!res.ok) throw new Error('GraphHopper ' + res.status);
     const data = await res.json();
-    const pts = parseGraphHopper(data);
+    const pts = data.paths?.[0]?.points?.coordinates?.map(p=>[p[1],p[0]]);
     if(!pts) throw new Error('no geometry');
     routeLayer.clearLayers();
-    routePolyline = L.polyline(pts, { color: '#0074FF', weight: 5, opacity: 0.95 }).addTo(routeLayer);
-    map.fitBounds(routePolyline.getBounds(), { padding: [60,60], maxZoom: 17 });
-    const s = extractSummary(data);
-    showRouteSummary(`📍 ${(s.dist/1000).toFixed(2)} km — ⏱ ${Math.max(1,Math.round(s.time/60000))} min`);
-    lastRecalcTime = Date.now();
-  } catch (err) {
-    console.warn("GraphHopper error", err);
-    hideRouteSummary();
-    if(confirm("Itinéraire indisponible.\n\nOuvrir Google Maps ?")){
-      const mepos = userMarker.getLatLng();
-      window.open(`https://www.google.com/maps/dir/?api=1&origin=${mepos.lat},${mepos.lng}&destination=${destLat},${destLng}`, '_blank');
-    }
+    routePolyline = L.polyline(pts, { color:'#0074FF', weight:5, opacity:0.95 }).addTo(routeLayer);
+    map.fitBounds(routePolyline.getBounds(), { padding:[60,60], maxZoom:17 });
+  } catch (e) {
+    alert("Erreur itinéraire");
   }
 }
-
-/* ========== DEVIATION CHECK & RECALC ========== */
-function checkDeviationAndRecalc(){
-  if(!currentDestination || !routePolyline || !userMarker) return;
-  const latlngs = routePolyline.getLatLngs().map(ll => [ll.lat, ll.lng]);
-  const pos = userMarker.getLatLng();
-  const dist = distancePointToPolylineMeters(pos.lat, pos.lng, latlngs);
-  if(dist > RECALC_THRESHOLD_METERS && (Date.now() - lastRecalcTime) > RECALL_MIN_INTERVAL_MS){
-    lastRecalcTime = Date.now();
-    calculerItineraire(currentDestination.lat, currentDestination.lng);
-  }
+function clearItinerary(){
+  routeLayer.clearLayers();
+  routePolyline = null;
+  currentDestination = null;
 }
 
-/* ========== GEOLOCATION WATCH (robuste) ========== */
+/* ========== GEOLOCATION ========== */
 if('geolocation' in navigator){
   navigator.geolocation.watchPosition(pos=>{
-    const lat = pos.coords.latitude, lng = pos.coords.longitude;
-    const target = [lat, lng];
-
+    const {latitude:lat, longitude:lng} = pos.coords;
     if(!userMarker){
-      userMarker = L.marker(target, { icon: livreurIcon }).addTo(map);
-      map.setView(target, 16);
+      userMarker = L.marker([lat,lng], { icon: livreurIcon }).addTo(map);
+      map.setView([lat,lng], 15);
     } else {
-      userMarker.setLatLng(target);
+      userMarker.setLatLng([lat,lng]);
     }
-
-    try { checkDeviationAndRecalc(); } catch(e){ console.warn(e); }
-
-    if(window.db){
-      try { db.ref('livreur').set({ lat, lng, updatedAt: Date.now() }); } catch(e){ /* ignore */ }
-    }
-  }, err => {
-    console.warn("GEO error", err);
-  }, { enableHighAccuracy:true, maximumAge:2000, timeout:10000 });
-} else {
-  console.warn("Géoloc non disponible");
+    db.ref('livreur').set({ lat, lng, updatedAt: Date.now() });
+  });
 }
 
-/* ========== RECHERCHE CLIENTS (début de nom) ========== */
-/* Comportement demandé :
-   - quand l'utilisateur tape : ne PAS ouvrir les popups automatiquement
-   - mettre en évidence (icône agrandie) tous les clients dont le nom commence par le texte tapé (startsWith)
-   - masquer / rendre translucides les autres
-*/
-(function initSearch() {
-  const searchInput = document.getElementById('searchInput');
-  if(!searchInput) return;
+/* ========== RECHERCHE AVEC LISTE ========== */
+(function initSearch(){
+  const input = document.getElementById("searchInput");
+  if(!input) return;
 
-  searchInput.addEventListener('input', () => {
-    const txt = (searchInput.value || '').toLowerCase().trim();
-    if(txt === ''){
-      // Reset : tout le monde visible, icône normale
-      clientMarkers.forEach(m => {
-        m.setOpacity(1);
-        m.setIcon(clientIcon);
-        // do not open/close popups automatically
-      });
+  // 🔽 conteneur pour la liste des résultats
+  const resultsBox = document.createElement("div");
+  resultsBox.id = "searchResults";
+  resultsBox.style.position = "absolute";
+  resultsBox.style.top = "45px";
+  resultsBox.style.left = "10px";
+  resultsBox.style.zIndex = "2000";
+  resultsBox.style.background = "white";
+  resultsBox.style.border = "1px solid #ccc";
+  resultsBox.style.borderRadius = "6px";
+  resultsBox.style.maxHeight = "180px";
+  resultsBox.style.overflowY = "auto";
+  resultsBox.style.width = "200px";
+  resultsBox.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
+  document.body.appendChild(resultsBox);
+
+  function clearResults(){ resultsBox.innerHTML = ""; }
+
+  input.addEventListener("input", ()=>{
+    const txt = input.value.trim().toLowerCase();
+    clearResults();
+    if(txt.length < 1) return;
+
+    const matches = clientMarkers.filter(m => m.clientName.startsWith(txt));
+    if(matches.length === 0){
+      resultsBox.innerHTML = "<div style='padding:6px;color:#666;'>Aucun client</div>";
       return;
     }
 
-    clientMarkers.forEach(m => {
-      const name = m.clientName || '';
-      const match = name.startsWith(txt); // beginsWith as requested
-      if(match){
-        m.setOpacity(1);
-        m.setIcon(clientIconLarge); // agrandi
-        // do not open popup automatically; keep user click for popup
-      } else {
-        m.setOpacity(0.25); // make other markers faint
-        m.setIcon(clientIcon);  // normal icon small
-        m.closePopup();
-      }
+    matches.forEach(m => {
+      const d = document.createElement("div");
+      d.textContent = m.clientData.name;
+      d.style.padding = "6px 8px";
+      d.style.cursor = "pointer";
+      d.style.borderBottom = "1px solid #eee";
+      d.addEventListener("mouseover",()=>d.style.background="#f2f2f2");
+      d.addEventListener("mouseout",()=>d.style.background="#fff");
+      d.addEventListener("click", ()=>{
+        clearResults();
+        input.value = m.clientData.name;
+        map.setView(m.getLatLng(), 16);
+        m.openPopup();
+      });
+      resultsBox.appendChild(d);
     });
+  });
+
+  document.addEventListener("click", e=>{
+    if(e.target !== input && !resultsBox.contains(e.target)){
+      clearResults();
+    }
   });
 })();
 
-/* ========== UI BINDINGS ========== */
+/* ========== UI BOUTONS ========== */
 $id('toggleView')?.addEventListener('click',()=>{
   satelliteMode = !satelliteMode;
   satelliteMode ? (map.addLayer(satelliteTiles), map.removeLayer(normalTiles))
                 : (map.addLayer(normalTiles), map.removeLayer(satelliteTiles));
 });
-function centrerSurMoi(){
-  if(!userMarker) return alert("Localisation en cours...");
-  map.setView(userMarker.getLatLng(), 16);
-}
-$id('myPosition')?.addEventListener('click', centrerSurMoi);
-
-/* contextmenu -> ajouter client */
-map.on('contextmenu', e => {
-  ajouterClient(e.latlng.lat, e.latlng.lng);
+$id('myPosition')?.addEventListener('click',()=>{
+  if(userMarker) map.setView(userMarker.getLatLng(), 15);
+  else alert("Localisation en cours...");
 });
 
-/* start */
-listenClients();
-map.on('movestart zoomstart', ()=>hideRouteSummary());
+/* clic droit -> ajout client */
+map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
 
-/* expose for debug */
+listenClients();
+
+/* expose pour debug */
 window.ajouterClient = ajouterClient;
 window.supprimerClient = supprimerClient;
 window.renommerClient = renommerClient;
 window.calculerItineraire = calculerItineraire;
 window.clearItinerary = clearItinerary;
-window.centrerSurMoi = centrerSurMoi;
