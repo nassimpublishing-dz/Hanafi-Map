@@ -5,9 +5,9 @@
   <title>Geotrack Livreurs</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- Manifest PWA + Icone (chemins racine) -->
-  <link rel="manifest" href="manifest.json">
-  <link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+  <!-- Manifest PWA + Icône (chemins complets vers le dépôt) -->
+  <link rel="manifest" href="/Hanafi-Map/manifest.json">
+  <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png">
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -92,12 +92,12 @@
     window.db = firebase.database();
   </script>
 
-  <!-- ton script principal placé à la racine du repo -->
-  <script src="app.js"></script>
+  <!-- Script principal (placé à la racine du dépôt) -->
+  <script src="/Hanafi-Map/app.js"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("service-worker.js").catch(e => console.warn("SW failed:", e));
+      navigator.serviceWorker.register("/Hanafi-Map/service-worker.js").catch(e => console.warn("SW failed:", e));
     }
   </script>
 
