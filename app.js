@@ -1,5 +1,3 @@
-// ✅ app.js — Recherche, bouton reset & boutons repositionnés
-
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
 const defaultZoom = 14;
@@ -35,14 +33,12 @@ const clientsLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 let userMarker = null;
 let satelliteMode = false;
-let currentDestination = null;
 let routePolyline = null;
 const clientMarkers = [];
 
-/* ========== UTILITAIRES ========== */
+/* ========== UTILS ========== */
 const $id = id => document.getElementById(id);
 function escapeHtml(s){return (s||"").toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-function toRad(v){ return v * Math.PI / 180; }
 
 /* ========== CLIENT CRUD ========== */
 function ajouterClient(lat,lng){
@@ -121,12 +117,11 @@ if('geolocation' in navigator){
   });
 }
 
-/* ========== RECHERCHE AVEC RESET ========== */
+/* ========== RECHERCHE + BOUTON RESET ========== */
 (function initSearch(){
   const input = document.getElementById("searchInput");
   if(!input) return;
 
-  // conteneur pour résultats
   const resultsBox = document.createElement("div");
   resultsBox.id = "searchResults";
   resultsBox.style.position = "absolute";
@@ -142,7 +137,6 @@ if('geolocation' in navigator){
   resultsBox.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
   document.body.appendChild(resultsBox);
 
-  // bouton "x"
   const clearBtn = document.createElement("span");
   clearBtn.textContent = "✕";
   clearBtn.style.position = "absolute";
@@ -172,7 +166,6 @@ if('geolocation' in navigator){
       return;
     }
 
-    // cacher tous puis afficher ceux trouvés
     clientMarkers.forEach(m => map.removeLayer(m));
     matches.forEach(m => m.addTo(map));
 
@@ -184,9 +177,7 @@ if('geolocation' in navigator){
       d.style.borderBottom = "1px solid #eee";
       d.addEventListener("mouseover",()=>d.style.background="#f2f2f2");
       d.addEventListener("mouseout",()=>d.style.background="#fff");
-      d.addEventListener("click", ()=>{
-        m.openPopup();
-      });
+      d.addEventListener("click", ()=> m.openPopup());
       resultsBox.appendChild(d);
     });
   });
@@ -198,7 +189,7 @@ if('geolocation' in navigator){
   });
 })();
 
-/* ========== ROUTE / UTILITAIRES ========== */
+/* ========== ITINÉRAIRE ========== */
 async function calculerItineraire(destLat, destLng){
   if(!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
@@ -218,12 +209,17 @@ function clearItinerary(){
   routeLayer.clearLayers();
   routePolyline = null;
 }
-window.showAllClients = function(){
-  clientMarkers.forEach(m => m.addTo(map));
-};
+window.showAllClients = ()=> clientMarkers.forEach(m => m.addTo(map));
 
-/* ========== BOUTONS EN BAS ========== */
-function createBottomButtons(){
+/* ========== BOUTONS EN BAS (fixe) + masquage anciens ========== */
+function createBottomButtonsAndHideOriginals(){
+  document.addEventListener('DOMContentLoaded', () => {
+    const origToggle = document.getElementById('toggleView');
+    const origPos = document.getElementById('myPosition');
+    if(origToggle) origToggle.style.display = 'none';
+    if(origPos) origPos.style.display = 'none';
+  });
+
   const container = document.createElement("div");
   container.style.position = "absolute";
   container.style.bottom = "20px";
@@ -232,50 +228,53 @@ function createBottomButtons(){
   container.style.display = "flex";
   container.style.flexDirection = "column";
   container.style.gap = "10px";
+  container.style.alignItems = "stretch";
 
-  const btnStyle = `
-    background:#007bff;
-    color:white;
-    border:none;
-    padding:8px 12px;
-    border-radius:6px;
-    cursor:pointer;
-    font-size:14px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.2);
-  `;
+  const btnBase = {
+    background: '#007bff',
+    color: 'white',
+    border: 'none',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+  };
 
-  const toggleBtn = document.createElement("button");
-  toggleBtn.id = "toggleView";
-  toggleBtn.innerText = "🛰️ Vue satellite";
-  toggleBtn.style.cssText = btnStyle;
-  toggleBtn.onclick = ()=>{
+  function applyStyle(el, styleObj){
+    Object.entries(styleObj).forEach(([k,v]) => el.style[k] = v);
+  }
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.innerText = '🛰️ Vue satellite';
+  applyStyle(toggleBtn, btnBase);
+  toggleBtn.addEventListener('click', () => {
     satelliteMode = !satelliteMode;
-    if(satelliteMode){
+    if (satelliteMode){
       map.addLayer(satelliteTiles);
       map.removeLayer(normalTiles);
-      toggleBtn.innerText = "🗺️ Vue normale";
+      toggleBtn.innerText = '🗺️ Vue normale';
     } else {
       map.addLayer(normalTiles);
       map.removeLayer(satelliteTiles);
-      toggleBtn.innerText = "🛰️ Vue satellite";
+      toggleBtn.innerText = '🛰️ Vue satellite';
     }
-  };
+  });
 
-  const posBtn = document.createElement("button");
-  posBtn.id = "myPosition";
-  posBtn.innerText = "📍 Ma position";
-  posBtn.style.cssText = btnStyle;
-  posBtn.onclick = ()=>{
-    if(userMarker) map.setView(userMarker.getLatLng(), 15);
+  const posBtn = document.createElement('button');
+  posBtn.innerText = '📍 Ma position';
+  applyStyle(posBtn, btnBase);
+  posBtn.addEventListener('click', () => {
+    if (userMarker) map.setView(userMarker.getLatLng(), 15);
     else alert("Localisation en cours...");
-  };
+  });
 
   container.appendChild(toggleBtn);
   container.appendChild(posBtn);
   document.body.appendChild(container);
 }
 
-createBottomButtons();
+createBottomButtonsAndHideOriginals();
 
 /* clic droit -> ajout client */
 map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
