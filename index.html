@@ -5,7 +5,7 @@
   <title>Geotrack Livreurs</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- Manifest PWA + Icone -->
+  <!-- Manifest PWA + Icone (chemins racine) -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
 
@@ -43,38 +43,25 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
 
-    .btn:hover {
-      background: #0056b3;
-    }
-
-    #searchInput {
-      width: 200px;
-      padding: 8px;
-      border: 2px solid #007bff;
-      border-radius: 6px;
-      font-size: 14px;
-    }
+    .btn:hover { background: #0056b3; }
+    #searchInput { width: 200px; padding: 8px; border: 2px solid #007bff; border-radius: 6px; font-size: 14px; }
   </style>
 </head>
 
 <body>
 
-  <!-- Zone des outils -->
   <div id="controls">
     <input id="searchInput" type="text" placeholder="🔍 Rechercher un client...">
     <button id="toggleView" class="btn">Vue Satellite</button>
     <button id="myPosition" class="btn">📍 Ma Position</button>
   </div>
 
-  <!-- Carte -->
   <div id="map"></div>
 
-  <!-- Attribution OSM -->
   <div style="position:absolute; bottom:4px; right:6px; z-index:999; font-size:11px; background:#fff; padding:2px 4px; border-radius:4px;">
     © OpenStreetMap
   </div>
 
-  <!-- 🧭 Résumé de l’itinéraire -->
   <div id="routeSummary"
        style="display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:99999;
               background:rgba(0,0,0,0.75); color:#fff; padding:10px 14px; border-radius:10px;
@@ -87,12 +74,11 @@
   <!-- Leaflet Routing Machine JS -->
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
-  <!-- Firebase SDK (v8 compatible) -->
+  <!-- Firebase SDK (v8) -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    // 🔥 Configuration Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyAtDTNbi_vMSrtHpHigy00quXOLXyGnQ9c",
       authDomain: "hanafi-livraison.firebaseapp.com",
@@ -102,20 +88,16 @@
       messagingSenderId: "106630001469",
       appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
     };
-
-    // Initialisation Firebase
     firebase.initializeApp(firebaseConfig);
     window.db = firebase.database();
   </script>
 
-  <!-- 🚚 Script principal -->
+  <!-- ton script principal placé à la racine du repo -->
   <script src="app.js"></script>
 
-  <!-- Service Worker -->
   <script>
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("service-worker.js")
-        .catch(e => console.warn("SW failed:", e));
+      navigator.serviceWorker.register("service-worker.js").catch(e => console.warn("SW failed:", e));
     }
   </script>
 
