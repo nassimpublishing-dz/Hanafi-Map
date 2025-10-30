@@ -1,4 +1,4 @@
-// ✅ js/app.js — Version finale stable (camion = position réelle)
+// ✅ js/app.js — Version finale stable (corrigée pour GitHub Pages)
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -18,16 +18,16 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
 });
 
 /* ========== ICONS ========== */
-// 🏪 Icône client
+// 🏪 Icône client (OK depuis CDN)
 const clientIcon = L.icon({
   iconUrl: "https://cdn-icons-png.flaticon.com/512/535/535239.png",
   iconSize: [42, 42],
   iconAnchor: [21, 42]
 });
 
-// 🚚 Icône livreur
+// 🚚 Icône livreur (camion) — CHEMIN ABSOLU pour GitHub Pages
 const livreurIcon = L.icon({
-  iconUrl: "camion-dexpedition.png", // ✅ Corrigé : chemin direct vers la racine
+  iconUrl: "/Hanafi-Map/camion-dexpedition.png",
   iconSize: [50, 50],
   iconAnchor: [25, 50]
 });
