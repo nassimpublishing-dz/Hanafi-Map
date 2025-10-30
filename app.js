@@ -178,9 +178,15 @@ if (searchInput) {
     const searchText = this.value.toLowerCase().trim();
     if (searchText === "") return;
 
-    const found = clientMarkers.find(marker =>
-      marker.clientName.startsWith(searchText)
-    );
+    const results = clientMarkers.filter(marker =>
+  marker.clientName.includes(searchText)
+);
+
+results.forEach(marker => {
+  map.setView(marker.getLatLng(), 16);
+  marker.openPopup();
+});
+
 
     if (found) {
       map.setView(found.getLatLng(), 16);
@@ -279,3 +285,4 @@ window.ajouterClient=ajouterClient;
 window.supprimerClient=supprimerClient;
 window.renommerClient=renommerClient;
 window.centrerSurMoi=centrerSurMoi;
+
