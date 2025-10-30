@@ -166,7 +166,6 @@ if('geolocation' in navigator){
   const input = document.getElementById("searchInput");
   if(!input) return;
 
-  // 🔽 conteneur pour la liste des résultats
   const resultsBox = document.createElement("div");
   resultsBox.id = "searchResults";
   resultsBox.style.position = "absolute";
@@ -187,7 +186,12 @@ if('geolocation' in navigator){
   input.addEventListener("input", ()=>{
     const txt = input.value.trim().toLowerCase();
     clearResults();
-    if(txt.length < 1) return;
+    clientsLayer.clearLayers();
+
+    if(txt.length < 1){
+      clientMarkers.forEach(m => clientsLayer.addLayer(m));
+      return;
+    }
 
     const matches = clientMarkers.filter(m => m.clientName.startsWith(txt));
     if(matches.length === 0){
@@ -210,6 +214,7 @@ if('geolocation' in navigator){
         m.openPopup();
       });
       resultsBox.appendChild(d);
+      clientsLayer.addLayer(m);
     });
   });
 
@@ -242,3 +247,9 @@ window.supprimerClient = supprimerClient;
 window.renommerClient = renommerClient;
 window.calculerItineraire = calculerItineraire;
 window.clearItinerary = clearItinerary;
+
+/* ✅ Réafficher tous les clients sur la carte */
+window.showAllClients = function() {
+  clientsLayer.clearLayers();
+  clientMarkers.forEach(marker => clientsLayer.addLayer(marker));
+};
