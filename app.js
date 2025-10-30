@@ -1,4 +1,4 @@
-// ✅ js/app.js — Version finale stable (corrigée pour GitHub Pages)
+// 🌍 js/app.js — Version finale stable (avec recherche intégrée)
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -18,14 +18,12 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
 });
 
 /* ========== ICONS ========== */
-// 🏪 Icône client (magasin) — fichier ajouté à la racine du dépôt
 const clientIcon = L.icon({
-  iconUrl: "/Hanafi-Map/magasin-delectronique.png", // chemin absolu pour GitHub Pages
+  iconUrl: "/Hanafi-Map/magasin-delectronique.png",
   iconSize: [42, 42],
   iconAnchor: [21, 42]
 });
 
-// 🚚 Icône livreur (camion) — CHEMIN ABSOLU pour GitHub Pages
 const livreurIcon = L.icon({
   iconUrl: "/Hanafi-Map/camion-dexpedition.png",
   iconSize: [50, 50],
@@ -44,6 +42,7 @@ const RECALL_MIN_INTERVAL_MS = 5000;
 const RECALC_THRESHOLD_METERS = 45;
 
 const routeSummaryEl = document.getElementById('routeSummary');
+const clientMarkers = []; // 🧭 Tableau global des marqueurs clients pour la recherche
 
 /* ========== HELPERS ========== */
 const $id = id => document.getElementById(id);
@@ -74,7 +73,6 @@ function haversineMeters(aLat, aLng, bLat, bLng){
   const aa = sinDlat*sinDlat + Math.cos(lat1)*Math.cos(lat2)*sinDlon*sinDlon;
   return 2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
 }
-
 function pointToSegmentDistanceMeters(ptLat, ptLng, vLat, vLng, wLat, wLng){
   const deg2m = 111320;
   const meanLat = (vLat + wLat + ptLat) / 3 * Math.PI/180;
@@ -82,7 +80,6 @@ function pointToSegmentDistanceMeters(ptLat, ptLng, vLat, vLng, wLat, wLng){
   const ax = vLng * cosLat * deg2m, ay = vLat * deg2m;
   const bx = wLng * cosLat * deg2m, by = wLat * deg2m;
   const px = ptLng * cosLat * deg2m, py = ptLat * deg2m;
-
   const dx = bx - ax, dy = by - ay;
   if(dx === 0 && dy === 0){
     const ddx = px-ax, ddy=py-ay;
@@ -94,7 +91,6 @@ function pointToSegmentDistanceMeters(ptLat, ptLng, vLat, vLng, wLat, wLng){
   const ddx2 = px-projx, ddy2=py-projy;
   return Math.sqrt(ddx2*ddx2 + ddy2*ddy2);
 }
-
 function distancePointToPolylineMeters(lat,lng,latlngs){
   if(!latlngs || latlngs.length===0) return Infinity;
   let m = Infinity;
@@ -135,7 +131,7 @@ function popupClientHtml(c){
 
       <button onclick="clearItinerary()" 
         style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px">
-        🧭 Enlever l’itinéraire
+        ❌ Enlever l’itinéraire
       </button><br><br>
 
       <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')"
@@ -155,15 +151,41 @@ function popupClientHtml(c){
 function listenClients(){
   db.ref('clients').on('value', snap=>{
     clientsLayer.clearLayers();
+    clientMarkers.length = 0; // 🧹 on vide les anciens marqueurs
+
     const data = snap.val();
     if(!data) return;
+
     Object.entries(data).forEach(([id,c])=>{
       if(!c.lat || !c.lng) return;
       c.id=id;
-      const m = L.marker([c.lat,c.lng],{icon:clientIcon});
-      m.bindPopup(popupClientHtml(c));
-      clientsLayer.addLayer(m);
+
+      const marker = L.marker([c.lat,c.lng],{icon:clientIcon})
+        .bindPopup(popupClientHtml(c))
+        .addTo(clientsLayer);
+
+      marker.clientName = (c.name || "").toLowerCase();
+      clientMarkers.push(marker);
     });
+  });
+}
+
+/* ========== FONCTION DE RECHERCHE CLIENT ========== */
+const searchInput = document.getElementById("searchInput");
+
+if (searchInput) {
+  searchInput.addEventListener("input", function () {
+    const searchText = this.value.toLowerCase().trim();
+    if (searchText === "") return;
+
+    const found = clientMarkers.find(marker =>
+      marker.clientName.startsWith(searchText)
+    );
+
+    if (found) {
+      map.setView(found.getLatLng(), 16);
+      found.openPopup();
+    }
   });
 }
 
@@ -176,12 +198,11 @@ function extractSummary(d){
   const p = d.paths?.[0];
   return p ? {dist:p.distance,time:p.time} : null;
 }
-
 async function calculerItineraire(lat,lng){
   if(!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
   currentDestination={lat,lng};
-  showRouteSummary("⏳ Calcul de l'itinéraire...");
+  showRouteSummary("🚗 Calcul de l'itinéraire...");
 
   try{
     const url=`https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${lat},${lng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
@@ -196,7 +217,7 @@ async function calculerItineraire(lat,lng){
     map.fitBounds(routePolyline.getBounds(),{padding:[60,60],maxZoom:17});
 
     const s=extractSummary(data)||{};
-    showRouteSummary(`📍 ${(s.dist/1000).toFixed(2)} km — ⏱️ ${Math.max(1,Math.round(s.time/60000))} min`);
+    showRouteSummary(`📏 ${(s.dist/1000).toFixed(2)} km — ⏱️ ${Math.max(1,Math.round(s.time/60000))} min`);
     lastRecalcTime=Date.now();
 
   }catch(e){
@@ -230,6 +251,7 @@ navigator.geolocation.watchPosition(pos=>{
   }else{
     userMarker.setLatLng(t);
   }
+
   try{checkDeviationAndRecalc();}catch(e){}
   if(window.db){
     try{db.ref('livreur').set({lat,lng,updatedAt:Date.now()});}catch(e){}
@@ -257,4 +279,3 @@ window.ajouterClient=ajouterClient;
 window.supprimerClient=supprimerClient;
 window.renommerClient=renommerClient;
 window.centrerSurMoi=centrerSurMoi;
-
