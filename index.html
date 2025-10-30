@@ -54,7 +54,7 @@
       font-weight: bold;
       color: #333;
       cursor: pointer;
-      display: none; /* caché par défaut */
+      display: none;
     }
 
     #clearSearch:hover {
@@ -86,8 +86,7 @@
       <input id="searchInput" type="text" placeholder="🔍 Rechercher un client...">
       <button id="clearSearch">×</button>
     </div>
-    <button id="toggleView" class="btn">Vue Satellite</button>
-    <button id="myPosition" class="btn">📍 Ma Position</button>
+    <!-- 🔹 Boutons supprimés ici -->
   </div>
 
   <div id="map"></div>
@@ -142,11 +141,7 @@
     clearBtn.addEventListener('click', () => {
       input.value = '';
       clearBtn.style.display = 'none';
-
-      // 🔁 Réafficher tous les clients sur la carte
-      if (window.showAllClients) {
-        window.showAllClients();
-      }
+      if (window.showAllClients) window.showAllClients();
     });
   </script>
 
