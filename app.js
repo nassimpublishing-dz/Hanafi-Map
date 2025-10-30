@@ -1,4 +1,4 @@
-// ✅ app.js — Recherche avec liste de résultats cliquables
+// ✅ app.js — Recherche, bouton reset & boutons repositionnés
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -37,26 +37,12 @@ let userMarker = null;
 let satelliteMode = false;
 let currentDestination = null;
 let routePolyline = null;
-let lastRecalcTime = 0;
-const RECALL_MIN_INTERVAL_MS = 5000;
-const RECALC_THRESHOLD_METERS = 45;
 const clientMarkers = [];
 
 /* ========== UTILITAIRES ========== */
 const $id = id => document.getElementById(id);
-function escapeHtml(s){
-  return (s||"").toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-}
+function escapeHtml(s){return (s||"").toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function toRad(v){ return v * Math.PI / 180; }
-function haversineMeters(aLat, aLng, bLat, bLng){
-  const R = 6371000;
-  const dLat = toRad(bLat - aLat);
-  const dLon = toRad(bLng - aLng);
-  const lat1 = toRad(aLat), lat2 = toRad(bLat);
-  const sinDlat = Math.sin(dLat/2), sinDlon = Math.sin(dLon/2);
-  const aa = sinDlat*sinDlat + Math.cos(lat1)*Math.cos(lat2)*sinDlon*sinDlon;
-  return 2 * R * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
-}
 
 /* ========== CLIENT CRUD ========== */
 function ajouterClient(lat,lng){
@@ -121,32 +107,6 @@ function listenClients(){
   });
 }
 
-/* ========== ROUTING ========== */
-async function calculerItineraire(destLat, destLng){
-  if(!userMarker) return alert("Localisation en attente...");
-  const me = userMarker.getLatLng();
-  currentDestination = { lat: destLat, lng: destLng };
-
-  try {
-    const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
-    const res = await fetch(url);
-    if(!res.ok) throw new Error('GraphHopper ' + res.status);
-    const data = await res.json();
-    const pts = data.paths?.[0]?.points?.coordinates?.map(p=>[p[1],p[0]]);
-    if(!pts) throw new Error('no geometry');
-    routeLayer.clearLayers();
-    routePolyline = L.polyline(pts, { color:'#0074FF', weight:5, opacity:0.95 }).addTo(routeLayer);
-    map.fitBounds(routePolyline.getBounds(), { padding:[60,60], maxZoom:17 });
-  } catch (e) {
-    alert("Erreur itinéraire");
-  }
-}
-function clearItinerary(){
-  routeLayer.clearLayers();
-  routePolyline = null;
-  currentDestination = null;
-}
-
 /* ========== GEOLOCATION ========== */
 if('geolocation' in navigator){
   navigator.geolocation.watchPosition(pos=>{
@@ -161,11 +121,12 @@ if('geolocation' in navigator){
   });
 }
 
-/* ========== RECHERCHE AVEC LISTE ========== */
+/* ========== RECHERCHE AVEC RESET ========== */
 (function initSearch(){
   const input = document.getElementById("searchInput");
   if(!input) return;
 
+  // conteneur pour résultats
   const resultsBox = document.createElement("div");
   resultsBox.id = "searchResults";
   resultsBox.style.position = "absolute";
@@ -181,23 +142,39 @@ if('geolocation' in navigator){
   resultsBox.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
   document.body.appendChild(resultsBox);
 
+  // bouton "x"
+  const clearBtn = document.createElement("span");
+  clearBtn.textContent = "✕";
+  clearBtn.style.position = "absolute";
+  clearBtn.style.right = "15px";
+  clearBtn.style.top = "10px";
+  clearBtn.style.cursor = "pointer";
+  clearBtn.style.fontSize = "18px";
+  clearBtn.style.color = "#777";
+  clearBtn.style.fontWeight = "bold";
+  clearBtn.addEventListener("click", ()=>{
+    input.value = "";
+    resultsBox.innerHTML = "";
+    window.showAllClients();
+  });
+  document.body.appendChild(clearBtn);
+
   function clearResults(){ resultsBox.innerHTML = ""; }
 
   input.addEventListener("input", ()=>{
     const txt = input.value.trim().toLowerCase();
     clearResults();
-    clientsLayer.clearLayers();
-
-    if(txt.length < 1){
-      clientMarkers.forEach(m => clientsLayer.addLayer(m));
-      return;
-    }
+    if(txt.length < 1){ window.showAllClients(); return; }
 
     const matches = clientMarkers.filter(m => m.clientName.startsWith(txt));
     if(matches.length === 0){
       resultsBox.innerHTML = "<div style='padding:6px;color:#666;'>Aucun client</div>";
       return;
     }
+
+    // cacher tous puis afficher ceux trouvés
+    clientMarkers.forEach(m => map.removeLayer(m));
+    matches.forEach(m => m.addTo(map));
 
     matches.forEach(m => {
       const d = document.createElement("div");
@@ -208,13 +185,9 @@ if('geolocation' in navigator){
       d.addEventListener("mouseover",()=>d.style.background="#f2f2f2");
       d.addEventListener("mouseout",()=>d.style.background="#fff");
       d.addEventListener("click", ()=>{
-        clearResults();
-        input.value = m.clientData.name;
-        map.setView(m.getLatLng(), 16);
         m.openPopup();
       });
       resultsBox.appendChild(d);
-      clientsLayer.addLayer(m);
     });
   });
 
@@ -225,31 +198,86 @@ if('geolocation' in navigator){
   });
 })();
 
-/* ========== UI BOUTONS ========== */
-$id('toggleView')?.addEventListener('click',()=>{
-  satelliteMode = !satelliteMode;
-  satelliteMode ? (map.addLayer(satelliteTiles), map.removeLayer(normalTiles))
-                : (map.addLayer(normalTiles), map.removeLayer(satelliteTiles));
-});
-$id('myPosition')?.addEventListener('click',()=>{
-  if(userMarker) map.setView(userMarker.getLatLng(), 15);
-  else alert("Localisation en cours...");
-});
+/* ========== ROUTE / UTILITAIRES ========== */
+async function calculerItineraire(destLat, destLng){
+  if(!userMarker) return alert("Localisation en attente...");
+  const me = userMarker.getLatLng();
+  try {
+    const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('GraphHopper ' + res.status);
+    const data = await res.json();
+    const pts = data.paths?.[0]?.points?.coordinates?.map(p=>[p[1],p[0]]);
+    if(!pts) throw new Error('no geometry');
+    routeLayer.clearLayers();
+    routePolyline = L.polyline(pts, { color:'#0074FF', weight:5, opacity:0.95 }).addTo(routeLayer);
+    map.fitBounds(routePolyline.getBounds(), { padding:[60,60], maxZoom:17 });
+  } catch (e) { alert("Erreur itinéraire"); }
+}
+function clearItinerary(){
+  routeLayer.clearLayers();
+  routePolyline = null;
+}
+window.showAllClients = function(){
+  clientMarkers.forEach(m => m.addTo(map));
+};
+
+/* ========== BOUTONS EN BAS ========== */
+function createBottomButtons(){
+  const container = document.createElement("div");
+  container.style.position = "absolute";
+  container.style.bottom = "20px";
+  container.style.right = "20px";
+  container.style.zIndex = "2000";
+  container.style.display = "flex";
+  container.style.flexDirection = "column";
+  container.style.gap = "10px";
+
+  const btnStyle = `
+    background:#007bff;
+    color:white;
+    border:none;
+    padding:8px 12px;
+    border-radius:6px;
+    cursor:pointer;
+    font-size:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.2);
+  `;
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.id = "toggleView";
+  toggleBtn.innerText = "🛰️ Vue satellite";
+  toggleBtn.style.cssText = btnStyle;
+  toggleBtn.onclick = ()=>{
+    satelliteMode = !satelliteMode;
+    if(satelliteMode){
+      map.addLayer(satelliteTiles);
+      map.removeLayer(normalTiles);
+      toggleBtn.innerText = "🗺️ Vue normale";
+    } else {
+      map.addLayer(normalTiles);
+      map.removeLayer(satelliteTiles);
+      toggleBtn.innerText = "🛰️ Vue satellite";
+    }
+  };
+
+  const posBtn = document.createElement("button");
+  posBtn.id = "myPosition";
+  posBtn.innerText = "📍 Ma position";
+  posBtn.style.cssText = btnStyle;
+  posBtn.onclick = ()=>{
+    if(userMarker) map.setView(userMarker.getLatLng(), 15);
+    else alert("Localisation en cours...");
+  };
+
+  container.appendChild(toggleBtn);
+  container.appendChild(posBtn);
+  document.body.appendChild(container);
+}
+
+createBottomButtons();
 
 /* clic droit -> ajout client */
 map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
 
 listenClients();
-
-/* expose pour debug */
-window.ajouterClient = ajouterClient;
-window.supprimerClient = supprimerClient;
-window.renommerClient = renommerClient;
-window.calculerItineraire = calculerItineraire;
-window.clearItinerary = clearItinerary;
-
-/* ✅ Réafficher tous les clients sur la carte */
-window.showAllClients = function() {
-  clientsLayer.clearLayers();
-  clientMarkers.forEach(marker => clientsLayer.addLayer(marker));
-};
