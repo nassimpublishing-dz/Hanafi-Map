@@ -18,9 +18,9 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
 });
 
 /* ========== ICONS ========== */
-// 🏪 Icône client (OK depuis CDN)
+// 🏪 Icône client (magasin) — fichier ajouté à la racine du dépôt
 const clientIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/535/535239.png",
+  iconUrl: "/Hanafi-Map/magasin-delectronique.png", // chemin absolu pour GitHub Pages
   iconSize: [42, 42],
   iconAnchor: [21, 42]
 });
@@ -257,3 +257,4 @@ window.ajouterClient=ajouterClient;
 window.supprimerClient=supprimerClient;
 window.renommerClient=renommerClient;
 window.centrerSurMoi=centrerSurMoi;
+
