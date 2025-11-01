@@ -1,149 +1,252 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8">
-  <title>Geotrack Livreurs</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-  <!-- Manifest PWA + Icône -->
-  <link rel="manifest" href="/Hanafi-Map/manifest.json">
-  <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png">
-
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
-
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hanafi Map</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-o9N1j8MkzE2VZbT+JH0nH1yO7fX/58jY6F6W7F6Q7hU="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-sA+zZ4xq4u+8M4Jr4c0X58rBTtPlfW5FOS2MBoY+4H0="
+    crossorigin=""
+  ></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   <style>
-    body, html { height: 100%; margin: 0; font-family: Arial, sans-serif; }
-    #map { width: 100%; height: 100vh; }
+    html, body { margin: 0; height: 100%; }
+    #map { height: 100%; width: 100%; }
 
-    #controls {
+    /* 🔎 Barre de recherche clients */
+    #searchInput {
       position: absolute;
       top: 10px;
       left: 10px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    /* Champ de recherche + bouton X intégré */
-    .search-container {
-      position: relative;
-      width: 220px;
-    }
-
-    #searchInput {
-      width: 100%;
-      padding: 8px 30px 8px 8px;
-      border: 2px solid #007bff;
+      width: 200px;
+      z-index: 1000;
+      padding: 6px;
+      border: 1px solid #ccc;
       border-radius: 6px;
-      font-size: 14px;
     }
 
+    /* ❌ bouton effacer client */
     #clearSearch {
       position: absolute;
-      right: 8px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: #ccc;
-      border: none;
-      border-radius: 50%;
-      width: 20px;
-      height: 20px;
-      font-weight: bold;
-      color: #333;
-      cursor: pointer;
-      display: none;
-    }
-
-    #clearSearch:hover {
-      background: #aaa;
-    }
-
-    .btn {
-      background: #007bff;
+      top: 10px;
+      left: 215px;
+      z-index: 1000;
+      background: #f00;
       color: #fff;
       border: none;
-      padding: 10px 12px;
+      padding: 6px 8px;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 14px;
-      width: 150px;
-      text-align: center;
-      font-weight: bold;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
 
-    .btn:hover { background: #0056b3; }
+    /* 🔍 Recherche de lieux */
+    #placeSearch {
+      position: absolute;
+      top: 60px;
+      left: 10px;
+      width: 200px;
+      z-index: 1000;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+
+    /* ❌ bouton effacer lieu */
+    #clearPlaceSearch {
+      position: absolute;
+      top: 60px;
+      left: 215px;
+      z-index: 1000;
+      background: #f00;
+      color: #fff;
+      border: none;
+      padding: 6px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
   </style>
 </head>
 
 <body>
+  <input id="searchInput" type="text" placeholder="🔍 Rechercher client..." />
+  <button id="clearSearch">❌</button>
 
-  <div id="controls">
-    <div class="search-container">
-      <input id="searchInput" type="text" placeholder="🔍 Rechercher un client...">
-      <button id="clearSearch">×</button>
-    </div>
-    <!-- 🔹 Boutons supprimés ici -->
-  </div>
+  <input id="placeSearch" type="text" placeholder="📍 Rechercher un lieu..." />
+  <button id="clearPlaceSearch">❌</button>
 
   <div id="map"></div>
 
-  <div style="position:absolute; bottom:4px; right:6px; z-index:999; font-size:11px; background:#fff; padding:2px 4px; border-radius:4px;">
-    © OpenStreetMap
-  </div>
-
-  <div id="routeSummary"
-       style="display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:99999;
-              background:rgba(0,0,0,0.75); color:#fff; padding:10px 14px; border-radius:10px;
-              font-weight:600; font-size:14px;">
-  </div>
-
-  <!-- Leaflet & Firebase -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-
   <script>
+    // === Configuration Firebase ===
     const firebaseConfig = {
-      apiKey: "AIzaSyAtDTNbi_vMSrtHpHigy00quXOLXyGnQ9c",
-      authDomain: "hanafi-livraison.firebaseapp.com",
-      databaseURL: "https://hanafi-livraison-default-rtdb.firebaseio.com",
-      projectId: "hanafi-livraison",
-      storageBucket: "hanafi-livraison.firebasestorage.app",
-      messagingSenderId: "106630001469",
-      appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
+      apiKey: "TON_API_KEY",
+      authDomain: "TON_DOMAINE.firebaseapp.com",
+      databaseURL: "https://TON_DATABASE.firebaseio.com",
+      projectId: "TON_PROJECT_ID",
+      storageBucket: "TON_BUCKET.appspot.com",
+      messagingSenderId: "TON_ID",
+      appId: "TON_APP_ID"
     };
     firebase.initializeApp(firebaseConfig);
-    window.db = firebase.database();
-  </script>
 
-  <!-- Script principal -->
-  <script src="/Hanafi-Map/app.js"></script>
+    // === Initialisation de la carte ===
+    const map = L.map('map').setView([36.7525, 3.04197], 12);
 
-  <script>
-    // Service Worker (PWA)
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/Hanafi-Map/service-worker.js").catch(e => console.warn("SW failed:", e));
+    // Couches de base
+    const planLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      attribution: '© Google Satellite'
+    });
+
+    let currentLayer = planLayer;
+
+    // === Icône clients ===
+    const clientIcon = L.icon({
+      iconUrl: '/Hanafi-Map/icons/magasin-delectronique.png',
+      iconSize: [40, 40],
+      iconAnchor: [20, 40],
+      popupAnchor: [0, -40]
+    });
+
+    // === Clients ===
+    const clientMarkers = [];
+
+    firebase.database().ref("clients").on("value", snapshot => {
+      const clients = snapshot.val();
+      if (!clients) return;
+      clientMarkers.forEach(m => map.removeLayer(m));
+      clientMarkers.length = 0;
+
+      Object.keys(clients).forEach(key => {
+        const c = clients[key];
+        if (c.lat && c.lng) {
+          const marker = L.marker([c.lat, c.lng], { icon: clientIcon }).addTo(map);
+          marker.bindPopup(`<b>${c.nom}</b><br>${c.adresse || ""}`);
+          marker.nom = (c.nom || "").toLowerCase();
+          clientMarkers.push(marker);
+        }
+      });
+    });
+
+    // === Recherche clients ===
+    const searchInput = document.getElementById("searchInput");
+    const clearSearchBtn = document.getElementById("clearSearch");
+
+    searchInput.addEventListener("input", () => {
+      const term = searchInput.value.trim().toLowerCase();
+
+      clientMarkers.forEach(m => map.removeLayer(m));
+      if (term === "") {
+        clientMarkers.forEach(m => m.addTo(map));
+        return;
+      }
+
+      clientMarkers.forEach(marker => {
+        if (marker.nom.startsWith(term)) {
+          marker.addTo(map);
+        }
+      });
+    });
+
+    clearSearchBtn.onclick = () => {
+      searchInput.value = "";
+      clientMarkers.forEach(m => m.addTo(map));
+    };
+
+    // === Boutons bas de page ===
+    function createBottomButtons() {
+      const container = L.DomUtil.create('div', 'leaflet-bottom leaflet-right');
+      container.style.display = 'flex';
+      container.style.flexDirection = 'column';
+      container.style.gap = '8px';
+      container.style.margin = '20px';
+
+      const toggleBtn = L.DomUtil.create('button', '', container);
+      toggleBtn.innerText = "Vue Satellite";
+      toggleBtn.style.cssText = "background:#007bff;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);";
+      
+      toggleBtn.onclick = () => {
+        if (currentLayer === planLayer) {
+          map.removeLayer(planLayer);
+          satelliteLayer.addTo(map);
+          currentLayer = satelliteLayer;
+          toggleBtn.innerText = "Vue Plan";
+        } else {
+          map.removeLayer(satelliteLayer);
+          planLayer.addTo(map);
+          currentLayer = planLayer;
+          toggleBtn.innerText = "Vue Satellite";
+        }
+      };
+
+      const positionBtn = L.DomUtil.create('button', '', container);
+      positionBtn.innerText = "📍 Ma Position";
+      positionBtn.style.cssText = "background:#28a745;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);";
+
+      positionBtn.onclick = () => {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(pos => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            L.marker([lat, lng]).addTo(map).bindPopup("Vous êtes ici").openPopup();
+            map.setView([lat, lng], 14);
+          }, () => alert("Impossible d’obtenir votre position."));
+        }
+      };
+
+      map.getContainer().appendChild(container);
     }
+    createBottomButtons();
 
-    // 🔹 Gestion du bouton "X"
-    const input = document.getElementById('searchInput');
-    const clearBtn = document.getElementById('clearSearch');
+    // === Recherche de lieux via Nominatim ===
+    const placeInput = document.getElementById("placeSearch");
+    const clearPlaceBtn = document.getElementById("clearPlaceSearch");
+    let placeMarker = null;
 
-    input.addEventListener('input', () => {
-      clearBtn.style.display = input.value ? 'block' : 'none';
+    placeInput.addEventListener("keyup", function (e) {
+      const query = placeInput.value.trim();
+      if (query.length < 3) return;
+
+      if (e.key === "Enter") {
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`)
+          .then(response => response.json())
+          .then(results => {
+            if (results.length > 0) {
+              if (placeMarker) map.removeLayer(placeMarker);
+              const r = results[0];
+              const lat = parseFloat(r.lat);
+              const lon = parseFloat(r.lon);
+
+              placeMarker = L.marker([lat, lon])
+                .addTo(map)
+                .bindPopup(`<b>${r.display_name}</b>`)
+                .openPopup();
+
+              map.setView([lat, lon], 15);
+            } else {
+              alert("Aucun lieu trouvé !");
+            }
+          })
+          .catch(err => console.error("Erreur Nominatim:", err));
+      }
     });
 
-    clearBtn.addEventListener('click', () => {
-      input.value = '';
-      clearBtn.style.display = 'none';
-      if (window.showAllClients) window.showAllClients();
-    });
+    clearPlaceBtn.onclick = () => {
+      placeInput.value = "";
+      if (placeMarker) map.removeLayer(placeMarker);
+    };
   </script>
-
 </body>
 </html>
