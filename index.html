@@ -79,15 +79,12 @@
 </head>
 
 <body>
-  <!-- 🔍 Recherche client -->
   <input id="searchInput" type="text" placeholder="🔍 Rechercher client..." />
   <button id="clearSearch">❌</button>
 
-  <!-- 📍 Recherche lieu -->
   <input id="placeSearch" type="text" placeholder="📍 Rechercher un lieu..." />
   <button id="clearPlaceSearch">❌</button>
 
-  <!-- 🗺️ Carte -->
   <div id="map"></div>
 
   <script>
@@ -111,7 +108,7 @@
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+    const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
       subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
       attribution: '© Google Satellite'
     });
