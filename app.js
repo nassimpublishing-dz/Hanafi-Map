@@ -1,4 +1,4 @@
-// ? app.js — Recherche, bouton reset & boutons repositionnés
+// ✅ app.js — Recherche, bouton reset, vue hybride & boutons repositionnés + labels gras foncé (corrigé)
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -12,9 +12,28 @@ const normalTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.
   attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
+// 🛰️ Vue satellite Google
 const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
   maxZoom: 20,
   subdomains: ['mt0','mt1','mt2','mt3']
+});
+
+// 🗺️ Layer d'étiquettes (labels) — Stamen "toner-labels"
+const labelsLayer = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png', {
+  subdomains: ['a','b','c','d'],
+  maxZoom: 20,
+  attribution: 'Map tiles by Stamen Design, CC BY 3.0 — Map data © OpenStreetMap contributors',
+  opacity: 1.0,
+});
+
+// 🔧 Amélioration du contraste pour labels (simulateur "gras foncé")
+labelsLayer.on('tileload', function(e) {
+  // applique un filtre CSS à la tuile pour renforcer contraste/lisibilité
+  try {
+    e.tile.style.filter = "contrast(180%) brightness(90%) saturate(150%)";
+  } catch (err) {
+    // en cas d'environnement où tile n'est pas un élément DOM, on ignore
+  }
 });
 
 /* ========== ICONS ========== */
@@ -52,7 +71,7 @@ function ajouterClient(lat,lng){
   ref.set({ name, lat, lng, createdAt: Date.now() });
 }
 function supprimerClient(id){
-  if(!confirm("? Supprimer ce client ?")) return;
+  if(!confirm("❌ Supprimer ce client ?")) return;
   db.ref(`clients/${id}`).remove();
   clearItinerary();
 }
@@ -67,19 +86,19 @@ function popupClientHtml(c){
       <small style="color:#555">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br><br>
       <button onclick="calculerItineraire(${c.lat}, ${c.lng})"
         style="width:100%;padding:6px;background:#0074FF;color:#fff;border:none;border-radius:4px">
-        ?? Itinéraire
+        🚗 Itinéraire
       </button><br><br>
       <button onclick="clearItinerary()" 
         style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px">
-        ?? Enlever l’itinéraire
+        🧭 Enlever l’itinéraire
       </button><br><br>
       <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')"
         style="width:100%;padding:6px;background:#009688;color:#fff;border:none;border-radius:4px">
-        ?? Modifier nom
+        ✏️ Modifier nom
       </button><br><br>
       <button onclick="supprimerClient('${c.id}')"
         style="width:100%;padding:6px;background:#e53935;color:#fff;border:none;border-radius:4px">
-        ??? Supprimer
+        🗑️ Supprimer
       </button>
     </div>
   `;
@@ -117,8 +136,8 @@ if('geolocation' in navigator){
     } else {
       userMarker.setLatLng([lat,lng]);
     }
-    db.ref('livreur').set({ lat, lng, updatedAt: Date.now() });
-  });
+    try { db.ref('livreur').set({ lat, lng, updatedAt: Date.now() }); } catch(e){}
+  }, e => console.warn('geo err', e), { enableHighAccuracy:true, maximumAge:2000, timeout:10000 });
 }
 
 /* ========== RECHERCHE AVEC RESET ========== */
@@ -126,7 +145,6 @@ if('geolocation' in navigator){
   const input = document.getElementById("searchInput");
   if(!input) return;
 
-  // conteneur pour résultats
   const resultsBox = document.createElement("div");
   resultsBox.id = "searchResults";
   resultsBox.style.position = "absolute";
@@ -136,63 +154,75 @@ if('geolocation' in navigator){
   resultsBox.style.background = "white";
   resultsBox.style.border = "1px solid #ccc";
   resultsBox.style.borderRadius = "6px";
-  resultsBox.style.maxHeight = "180px";
+  resultsBox.style.maxHeight = "220px";
   resultsBox.style.overflowY = "auto";
-  resultsBox.style.width = "200px";
+  resultsBox.style.width = "240px";
   resultsBox.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
   document.body.appendChild(resultsBox);
 
-  // bouton "x"
-  const clearBtn = document.createElement("span");
-  clearBtn.textContent = "?";
-  clearBtn.style.position = "absolute";
-  clearBtn.style.right = "15px";
-  clearBtn.style.top = "10px";
-  clearBtn.style.cursor = "pointer";
-  clearBtn.style.fontSize = "18px";
-  clearBtn.style.color = "#777";
-  clearBtn.style.fontWeight = "bold";
+  // clear button (X) visible dans l'UI
+  const clearBtn = document.getElementById('clearSearch') || (()=>{
+    const el = document.createElement("span");
+    el.id = "clearSearch-js";
+    el.textContent = "✕";
+    el.style.position = "absolute";
+    el.style.right = "18px";
+    el.style.top = "14px";
+    el.style.cursor = "pointer";
+    el.style.fontSize = "16px";
+    el.style.color = "#777";
+    el.style.fontWeight = "bold";
+    el.style.zIndex = 2001;
+    document.body.appendChild(el);
+    return el;
+  })();
+
   clearBtn.addEventListener("click", ()=>{
     input.value = "";
     resultsBox.innerHTML = "";
     window.showAllClients();
+    clearBtn.style.display = 'none';
   });
-  document.body.appendChild(clearBtn);
 
   function clearResults(){ resultsBox.innerHTML = ""; }
 
   input.addEventListener("input", ()=>{
     const txt = input.value.trim().toLowerCase();
     clearResults();
+    clearBtn.style.display = input.value ? 'block' : 'none';
     if(txt.length < 1){ window.showAllClients(); return; }
 
     const matches = clientMarkers.filter(m => m.clientName.startsWith(txt));
     if(matches.length === 0){
-      resultsBox.innerHTML = "<div style='padding:6px;color:#666;'>Aucun client</div>";
+      resultsBox.innerHTML = "<div style='padding:8px;color:#666;'>Aucun client</div>";
+      // hide all markers (optionnel) — here on préfère afficher rien
+      clientMarkers.forEach(m => map.removeLayer(m));
       return;
     }
 
-    // cacher tous puis afficher ceux trouvés
+    // cacher tous puis afficher ceux trouvés (mais on ne force pas popup)
     clientMarkers.forEach(m => map.removeLayer(m));
     matches.forEach(m => m.addTo(map));
 
     matches.forEach(m => {
       const d = document.createElement("div");
       d.textContent = m.clientData.name;
-      d.style.padding = "6px 8px";
+      d.style.padding = "8px 10px";
       d.style.cursor = "pointer";
       d.style.borderBottom = "1px solid #eee";
       d.addEventListener("mouseover",()=>d.style.background="#f2f2f2");
       d.addEventListener("mouseout",()=>d.style.background="#fff");
       d.addEventListener("click", ()=>{
+        // n'ouvre la popup que si l'utilisateur clique explicitement
         m.openPopup();
       });
       resultsBox.appendChild(d);
     });
   });
 
+  // hide results when clicking outside
   document.addEventListener("click", e=>{
-    if(e.target !== input && !resultsBox.contains(e.target)){
+    if(e.target !== input && !resultsBox.contains(e.target) && e.target !== clearBtn){
       clearResults();
     }
   });
@@ -244,33 +274,48 @@ function createBottomButtons(){
     box-shadow:0 2px 6px rgba(0,0,0,0.2);
   `;
 
-  toggleBtn.onclick = ()=>{
-  satelliteMode = !satelliteMode;
-  if(satelliteMode){
-    map.addLayer(satelliteTiles);
-    map.addLayer(labelsLayer); // ← superpose les noms/étiquettes au-dessus du satellite
-    map.removeLayer(normalTiles);
-    toggleBtn.innerText = "🗺️ Vue normale";
-  } else {
-    map.addLayer(normalTiles);
-    map.removeLayer(satelliteTiles);
-    if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
-    toggleBtn.innerText = "🛰️ Vue satellite";
-  }
-};
+  // create toggle button (declared BEFORE usage)
+  const toggleBtn = document.createElement("button");
+  toggleBtn.id = "toggleView-bottom";
+  toggleBtn.innerText = "🛰️ Vue satellite";
+  toggleBtn.style.cssText = btnStyle;
 
+  // create pos button
   const posBtn = document.createElement("button");
-  posBtn.id = "myPosition";
-  posBtn.innerText = "?? Ma position";
+  posBtn.id = "myPosition-bottom";
+  posBtn.innerText = "📍 Ma position";
   posBtn.style.cssText = btnStyle;
-  posBtn.onclick = ()=>{
+
+  // attach handlers AFTER creation
+  toggleBtn.addEventListener("click", ()=>{
+    satelliteMode = !satelliteMode;
+    if(satelliteMode){
+      map.addLayer(satelliteTiles);
+      map.addLayer(labelsLayer); // superpose labels sur le satellite
+      map.removeLayer(normalTiles);
+      toggleBtn.innerText = "🗺️ Vue normale";
+    } else {
+      map.addLayer(normalTiles);
+      map.removeLayer(satelliteTiles);
+      if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
+      toggleBtn.innerText = "🛰️ Vue satellite";
+    }
+  });
+
+  posBtn.addEventListener("click", ()=>{
     if(userMarker) map.setView(userMarker.getLatLng(), 15);
     else alert("Localisation en cours...");
-  };
+  });
 
   container.appendChild(toggleBtn);
   container.appendChild(posBtn);
   document.body.appendChild(container);
+
+  // Hide original top controls if present (keeps markup but hides visually)
+  const origToggle = document.getElementById('toggleView');
+  const origPos = document.getElementById('myPosition');
+  if(origToggle) origToggle.style.display = 'none';
+  if(origPos) origPos.style.display = 'none';
 }
 
 createBottomButtons();
