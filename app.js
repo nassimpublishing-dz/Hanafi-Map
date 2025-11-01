@@ -1,4 +1,4 @@
-// ✅ app.js — Recherche, bouton reset, vue hybride & boutons repositionnés + labels gras foncé
+// ? app.js — Recherche, bouton reset & boutons repositionnés
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -12,23 +12,9 @@ const normalTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.
   attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-// 🛰️ Vue satellite Google
 const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
   maxZoom: 20,
   subdomains: ['mt0','mt1','mt2','mt3']
-});
-
-// 🗺️ Layer d'étiquettes (labels) — Stamen "toner-labels"
-const labelsLayer = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png', {
-  subdomains: ['a','b','c','d'],
-  maxZoom: 20,
-  attribution: 'Map tiles by Stamen Design, CC BY 3.0 — Map data © OpenStreetMap contributors',
-  opacity: 1.0,
-});
-
-// 🔧 Amélioration du contraste pour labels (simulateur "gras foncé")
-labelsLayer.on('tileload', function(e) {
-  e.tile.style.filter = "contrast(180%) brightness(90%) saturate(150%)";
 });
 
 /* ========== ICONS ========== */
@@ -66,7 +52,7 @@ function ajouterClient(lat,lng){
   ref.set({ name, lat, lng, createdAt: Date.now() });
 }
 function supprimerClient(id){
-  if(!confirm("❌ Supprimer ce client ?")) return;
+  if(!confirm("? Supprimer ce client ?")) return;
   db.ref(`clients/${id}`).remove();
   clearItinerary();
 }
@@ -81,19 +67,19 @@ function popupClientHtml(c){
       <small style="color:#555">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br><br>
       <button onclick="calculerItineraire(${c.lat}, ${c.lng})"
         style="width:100%;padding:6px;background:#0074FF;color:#fff;border:none;border-radius:4px">
-        🚗 Itinéraire
+        ?? Itinéraire
       </button><br><br>
       <button onclick="clearItinerary()" 
         style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px">
-        🧭 Enlever l’itinéraire
+        ?? Enlever l’itinéraire
       </button><br><br>
       <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')"
         style="width:100%;padding:6px;background:#009688;color:#fff;border:none;border-radius:4px">
-        ✏️ Modifier nom
+        ?? Modifier nom
       </button><br><br>
       <button onclick="supprimerClient('${c.id}')"
         style="width:100%;padding:6px;background:#e53935;color:#fff;border:none;border-radius:4px">
-        🗑️ Supprimer
+        ??? Supprimer
       </button>
     </div>
   `;
@@ -140,6 +126,7 @@ if('geolocation' in navigator){
   const input = document.getElementById("searchInput");
   if(!input) return;
 
+  // conteneur pour résultats
   const resultsBox = document.createElement("div");
   resultsBox.id = "searchResults";
   resultsBox.style.position = "absolute";
@@ -155,8 +142,9 @@ if('geolocation' in navigator){
   resultsBox.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
   document.body.appendChild(resultsBox);
 
+  // bouton "x"
   const clearBtn = document.createElement("span");
-  clearBtn.textContent = "✕";
+  clearBtn.textContent = "?";
   clearBtn.style.position = "absolute";
   clearBtn.style.right = "15px";
   clearBtn.style.top = "10px";
@@ -184,6 +172,7 @@ if('geolocation' in navigator){
       return;
     }
 
+    // cacher tous puis afficher ceux trouvés
     clientMarkers.forEach(m => map.removeLayer(m));
     matches.forEach(m => m.addTo(map));
 
@@ -195,7 +184,9 @@ if('geolocation' in navigator){
       d.style.borderBottom = "1px solid #eee";
       d.addEventListener("mouseover",()=>d.style.background="#f2f2f2");
       d.addEventListener("mouseout",()=>d.style.background="#fff");
-      d.addEventListener("click", ()=>{ m.openPopup(); });
+      d.addEventListener("click", ()=>{
+        m.openPopup();
+      });
       resultsBox.appendChild(d);
     });
   });
@@ -253,29 +244,24 @@ function createBottomButtons(){
     box-shadow:0 2px 6px rgba(0,0,0,0.2);
   `;
 
-  const toggleBtn = document.createElement("button");
-  toggleBtn.id = "toggleView";
-  toggleBtn.innerText = "🛰️ Vue satellite";
-  toggleBtn.style.cssText = btnStyle;
-
   toggleBtn.onclick = ()=>{
-    satelliteMode = !satelliteMode;
-    if(satelliteMode){
-      map.addLayer(satelliteTiles);
-      map.addLayer(labelsLayer); // superpose les noms sur la vue satellite
-      map.removeLayer(normalTiles);
-      toggleBtn.innerText = "🗺️ Vue normale";
-    } else {
-      map.addLayer(normalTiles);
-      map.removeLayer(satelliteTiles);
-      if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
-      toggleBtn.innerText = "🛰️ Vue satellite";
-    }
-  };
+  satelliteMode = !satelliteMode;
+  if(satelliteMode){
+    map.addLayer(satelliteTiles);
+    map.addLayer(labelsLayer); // ← superpose les noms/étiquettes au-dessus du satellite
+    map.removeLayer(normalTiles);
+    toggleBtn.innerText = "🗺️ Vue normale";
+  } else {
+    map.addLayer(normalTiles);
+    map.removeLayer(satelliteTiles);
+    if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
+    toggleBtn.innerText = "🛰️ Vue satellite";
+  }
+};
 
   const posBtn = document.createElement("button");
   posBtn.id = "myPosition";
-  posBtn.innerText = "📍 Ma position";
+  posBtn.innerText = "?? Ma position";
   posBtn.style.cssText = btnStyle;
   posBtn.onclick = ()=>{
     if(userMarker) map.setView(userMarker.getLatLng(), 15);
