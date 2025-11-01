@@ -4,19 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hanafi Map</title>
+
+  <!-- ✅ Feuille de style Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-o9N1j8MkzE2VZbT+JH0nH1yO7fX/58jY6F6W7F6Q7hU="
-    crossorigin=""
   />
+
+  <!-- ✅ Script Leaflet -->
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-sA+zZ4xq4u+8M4Jr4c0X58rBTtPlfW5FOS2MBoY+4H0="
-    crossorigin=""
   ></script>
+
+  <!-- ✅ Firebase -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
   <style>
     html, body { margin: 0; height: 100%; }
     #map { height: 100%; width: 100%; }
@@ -76,12 +79,15 @@
 </head>
 
 <body>
+  <!-- 🔍 Recherche client -->
   <input id="searchInput" type="text" placeholder="🔍 Rechercher client..." />
   <button id="clearSearch">❌</button>
 
+  <!-- 📍 Recherche lieu -->
   <input id="placeSearch" type="text" placeholder="📍 Rechercher un lieu..." />
   <button id="clearPlaceSearch">❌</button>
 
+  <!-- 🗺️ Carte -->
   <div id="map"></div>
 
   <script>
@@ -105,7 +111,7 @@
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+    const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
       subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
       attribution: '© Google Satellite'
     });
