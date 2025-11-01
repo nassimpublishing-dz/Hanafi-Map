@@ -1,4 +1,4 @@
-// ✅ app.js — version stable + bouton "🛒 Passer commande" intégré
+// ✅ app.js — version stable avec labels CartoDB (gras foncé), boutons en bas, recherche + reset OK
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -72,59 +72,30 @@ function renommerClient(id, oldName){
   const n = prompt("Nouveau nom :", oldName);
   if(n) db.ref(`clients/${id}/name`).set(n);
 }
-
-/* ========== POPUP CLIENT (ROBUSTE + PASSER COMMANDE) ========== */
 function popupClientHtml(c){
-  const displayName = escapeHtml(c.name || c.nom || "Client");
-  const createdAt = c.createdAt ? new Date(c.createdAt).toLocaleString() : "";
-  const baseCommandeUrl = "https://exemple.com/commande"; // 🔗 Remplace par ton vrai lien
-  const params = new URLSearchParams({
-    clientId: c.id || "",
-    clientName: displayName
-  }).toString();
-  const commandeLink = baseCommandeUrl + "?" + params;
-
   return `
-    <div style="font-size:13px; max-width:240px;">
-      <b>${displayName}</b><br>
-      ${c.adresse ? `<small style="color:#555">${escapeHtml(c.adresse)}</small><br>` : ""}
-      ${createdAt ? `<small style="color:#777">Ajouté : ${createdAt}</small><br>` : ""}
-      <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
-        <button onclick="window.open('${commandeLink}', '_blank')" style="
-          background:#28a745;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;
-          font-weight:600;">
-          🛒 Passer commande
-        </button>
-
-        <button onclick="calculerItineraire(${c.lat}, ${c.lng})" style="
-          background:#0074FF;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;
-          font-weight:600;">
-          🚗 Itinéraire
-        </button>
-
-        <button onclick="clearItinerary()" style="
-          background:#ff9800;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;
-          font-weight:600;">
-          🧭 Enlever itinéraire
-        </button>
-
-        <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name || c.nom || "")}')" style="
-          background:#009688;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;
-          font-weight:600;">
-          ✏️ Modifier
-        </button>
-
-        <button onclick="supprimerClient('${c.id}')" style="
-          background:#e53935;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;
-          font-weight:600;">
-          🗑️ Supprimer
-        </button>
-      </div>
+    <div style="font-size:13px;">
+      <b>${escapeHtml(c.name)}</b><br>
+      <small style="color:#555">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br><br>
+      <button onclick="calculerItineraire(${c.lat}, ${c.lng})"
+        style="width:100%;padding:6px;background:#0074FF;color:#fff;border:none;border-radius:4px">
+        🚗 Itinéraire
+      </button><br><br>
+      <button onclick="clearItinerary()" 
+        style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px">
+        🧭 Enlever l’itinéraire
+      </button><br><br>
+      <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')"
+        style="width:100%;padding:6px;background:#009688;color:#fff;border:none;border-radius:4px">
+        ✏️ Modifier nom
+      </button><br><br>
+      <button onclick="supprimerClient('${c.id}')"
+        style="width:100%;padding:6px;background:#e53935;color:#fff;border:none;border-radius:4px">
+        🗑️ Supprimer
+      </button>
     </div>
   `;
 }
-
-/* ========== ÉCOUTE FIREBASE (ROBUSTE) ========== */
 function listenClients(){
   db.ref('clients').on('value', snap=>{
     clientsLayer.clearLayers();
@@ -133,11 +104,11 @@ function listenClients(){
     if(!data) return;
 
     Object.entries(data).forEach(([id,c])=>{
-      if(!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return;
+      if(!c || typeof c.lat!=='number' || typeof c.lng!=='number') return;
       c.id = id;
       const m = L.marker([c.lat,c.lng], { icon: clientIcon });
       m.bindPopup(popupClientHtml(c));
-      m.clientName = (c.name || c.nom || "").toLowerCase();
+      m.clientName = (c.name||"").toLowerCase();
       m.clientData = c;
       clientsLayer.addLayer(m);
       clientMarkers.push(m);
@@ -213,7 +184,7 @@ if('geolocation' in navigator){
 
     matches.forEach(m=>{
       const d=document.createElement("div");
-      d.textContent=m.clientData.name || m.clientData.nom;
+      d.textContent=m.clientData.name;
       d.style.padding="8px 10px";
       d.style.cursor="pointer";
       d.style.borderBottom="1px solid #eee";
