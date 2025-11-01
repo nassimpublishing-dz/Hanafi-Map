@@ -1,4 +1,4 @@
-// ✅ app.js — Recherche, bouton reset, vue hybride & boutons repositionnés + labels gras foncé (corrigé)
+// ✅ app.js — version stable avec labels CartoDB (gras foncé), boutons en bas, recherche + reset OK
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -18,25 +18,21 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
   subdomains: ['mt0','mt1','mt2','mt3']
 });
 
-// 🗺️ Layer d'étiquettes (labels) — Stamen "toner-labels"
-const labelsLayer = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png', {
+// 🗺️ Labels CartoDB (stables et légers)
+const labelsLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png', {
   subdomains: ['a','b','c','d'],
   maxZoom: 20,
-  attribution: 'Map tiles by Stamen Design, CC BY 3.0 — Map data © OpenStreetMap contributors',
-  opacity: 1.0,
+  attribution: '© OpenStreetMap contributors, © CartoDB',
+  opacity: 1.0
 });
 
-// 🔧 Amélioration du contraste pour labels (simulateur "gras foncé")
-labelsLayer.on('tileload', function(e) {
-  // applique un filtre CSS à la tuile pour renforcer contraste/lisibilité
-  try {
-    e.tile.style.filter = "contrast(180%) brightness(90%) saturate(150%)";
-  } catch (err) {
-    // en cas d'environnement où tile n'est pas un élément DOM, on ignore
-  }
+// 🔧 améliore le contraste pour simuler du “gras foncé”
+labelsLayer.on('tileload', e => {
+  try { e.tile.style.filter = "contrast(180%) brightness(80%)"; }
+  catch(err) { /* ignore */ }
 });
 
-/* ========== ICONS ========== */
+/* ========== ICONES ========== */
 const clientIcon = L.icon({
   iconUrl: "/Hanafi-Map/magasin-delectronique.png",
   iconSize: [42, 42],
@@ -49,21 +45,19 @@ const livreurIcon = L.icon({
   iconAnchor: [25, 50]
 });
 
-/* ========== LAYERS & STATE ========== */
+/* ========== LAYERS & VARIABLES ========== */
 const clientsLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 let userMarker = null;
 let satelliteMode = false;
-let currentDestination = null;
 let routePolyline = null;
 const clientMarkers = [];
 
-/* ========== UTILITAIRES ========== */
+/* ========== UTILS ========== */
 const $id = id => document.getElementById(id);
 function escapeHtml(s){return (s||"").toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-function toRad(v){ return v * Math.PI / 180; }
 
-/* ========== CLIENT CRUD ========== */
+/* ========== CLIENTS FIREBASE ========== */
 function ajouterClient(lat,lng){
   const name = prompt("Nom du client ?");
   if(!name) return;
@@ -73,7 +67,6 @@ function ajouterClient(lat,lng){
 function supprimerClient(id){
   if(!confirm("❌ Supprimer ce client ?")) return;
   db.ref(`clients/${id}`).remove();
-  clearItinerary();
 }
 function renommerClient(id, oldName){
   const n = prompt("Nouveau nom :", oldName);
@@ -103,8 +96,6 @@ function popupClientHtml(c){
     </div>
   `;
 }
-
-/* ========== FIREBASE LISTENER ========== */
 function listenClients(){
   db.ref('clients').on('value', snap=>{
     clientsLayer.clearLayers();
@@ -113,12 +104,11 @@ function listenClients(){
     if(!data) return;
 
     Object.entries(data).forEach(([id,c])=>{
-      if(!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return;
+      if(!c || typeof c.lat!=='number' || typeof c.lng!=='number') return;
       c.id = id;
-      const m = L.marker([c.lat, c.lng], { icon: clientIcon });
+      const m = L.marker([c.lat,c.lng], { icon: clientIcon });
       m.bindPopup(popupClientHtml(c));
-      m.clientName = (c.name || "").toLowerCase();
-      m.clientId = id;
+      m.clientName = (c.name||"").toLowerCase();
       m.clientData = c;
       clientsLayer.addLayer(m);
       clientMarkers.push(m);
@@ -133,18 +123,15 @@ if('geolocation' in navigator){
     if(!userMarker){
       userMarker = L.marker([lat,lng], { icon: livreurIcon }).addTo(map);
       map.setView([lat,lng], 15);
-    } else {
-      userMarker.setLatLng([lat,lng]);
-    }
+    } else userMarker.setLatLng([lat,lng]);
     try { db.ref('livreur').set({ lat, lng, updatedAt: Date.now() }); } catch(e){}
-  }, e => console.warn('geo err', e), { enableHighAccuracy:true, maximumAge:2000, timeout:10000 });
+  }, e=>console.warn('geo err',e), {enableHighAccuracy:true, maximumAge:2000, timeout:10000});
 }
 
-/* ========== RECHERCHE AVEC RESET ========== */
+/* ========== RECHERCHE + CLEAR ========== */
 (function initSearch(){
   const input = document.getElementById("searchInput");
   if(!input) return;
-
   const resultsBox = document.createElement("div");
   resultsBox.id = "searchResults";
   resultsBox.style.position = "absolute";
@@ -160,150 +147,115 @@ if('geolocation' in navigator){
   resultsBox.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
   document.body.appendChild(resultsBox);
 
-  // clear button (X) visible dans l'UI
-  const clearBtn = document.getElementById('clearSearch') || (()=>{
-    const el = document.createElement("span");
-    el.id = "clearSearch-js";
-    el.textContent = "✕";
-    el.style.position = "absolute";
-    el.style.right = "18px";
-    el.style.top = "14px";
-    el.style.cursor = "pointer";
-    el.style.fontSize = "16px";
-    el.style.color = "#777";
-    el.style.fontWeight = "bold";
-    el.style.zIndex = 2001;
-    document.body.appendChild(el);
-    return el;
-  })();
+  const clearBtn = document.createElement("span");
+  clearBtn.textContent = "✕";
+  clearBtn.style.position = "absolute";
+  clearBtn.style.right = "18px";
+  clearBtn.style.top = "14px";
+  clearBtn.style.cursor = "pointer";
+  clearBtn.style.fontSize = "16px";
+  clearBtn.style.color = "#777";
+  clearBtn.style.fontWeight = "bold";
+  clearBtn.style.display = "none";
+  clearBtn.style.zIndex = 2001;
+  document.body.appendChild(clearBtn);
 
   clearBtn.addEventListener("click", ()=>{
     input.value = "";
     resultsBox.innerHTML = "";
-    window.showAllClients();
+    clientMarkers.forEach(m => m.addTo(map));
     clearBtn.style.display = 'none';
   });
 
-  function clearResults(){ resultsBox.innerHTML = ""; }
-
   input.addEventListener("input", ()=>{
     const txt = input.value.trim().toLowerCase();
-    clearResults();
+    resultsBox.innerHTML = "";
     clearBtn.style.display = input.value ? 'block' : 'none';
-    if(txt.length < 1){ window.showAllClients(); return; }
+    if(txt.length < 1){ clientMarkers.forEach(m=>m.addTo(map)); return; }
 
     const matches = clientMarkers.filter(m => m.clientName.startsWith(txt));
     if(matches.length === 0){
       resultsBox.innerHTML = "<div style='padding:8px;color:#666;'>Aucun client</div>";
-      // hide all markers (optionnel) — here on préfère afficher rien
-      clientMarkers.forEach(m => map.removeLayer(m));
+      clientMarkers.forEach(m=>map.removeLayer(m));
       return;
     }
+    clientMarkers.forEach(m=>map.removeLayer(m));
+    matches.forEach(m=>m.addTo(map));
 
-    // cacher tous puis afficher ceux trouvés (mais on ne force pas popup)
-    clientMarkers.forEach(m => map.removeLayer(m));
-    matches.forEach(m => m.addTo(map));
-
-    matches.forEach(m => {
-      const d = document.createElement("div");
-      d.textContent = m.clientData.name;
-      d.style.padding = "8px 10px";
-      d.style.cursor = "pointer";
-      d.style.borderBottom = "1px solid #eee";
-      d.addEventListener("mouseover",()=>d.style.background="#f2f2f2");
-      d.addEventListener("mouseout",()=>d.style.background="#fff");
-      d.addEventListener("click", ()=>{
-        // n'ouvre la popup que si l'utilisateur clique explicitement
-        m.openPopup();
-      });
+    matches.forEach(m=>{
+      const d=document.createElement("div");
+      d.textContent=m.clientData.name;
+      d.style.padding="8px 10px";
+      d.style.cursor="pointer";
+      d.style.borderBottom="1px solid #eee";
+      d.onmouseover=()=>d.style.background="#f2f2f2";
+      d.onmouseout=()=>d.style.background="#fff";
+      d.onclick=()=>m.openPopup();
       resultsBox.appendChild(d);
     });
   });
-
-  // hide results when clicking outside
-  document.addEventListener("click", e=>{
-    if(e.target !== input && !resultsBox.contains(e.target) && e.target !== clearBtn){
-      clearResults();
-    }
-  });
 })();
 
-/* ========== ROUTE / UTILITAIRES ========== */
-async function calculerItineraire(destLat, destLng){
+/* ========== ROUTE ========== */
+async function calculerItineraire(destLat,destLng){
   if(!userMarker) return alert("Localisation en attente...");
-  const me = userMarker.getLatLng();
-  try {
-    const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
-    const res = await fetch(url);
-    if(!res.ok) throw new Error('GraphHopper ' + res.status);
-    const data = await res.json();
-    const pts = data.paths?.[0]?.points?.coordinates?.map(p=>[p[1],p[0]]);
-    if(!pts) throw new Error('no geometry');
+  const me=userMarker.getLatLng();
+  try{
+    const url=`https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res=await fetch(url);
+    if(!res.ok) throw new Error(res.status);
+    const data=await res.json();
+    const pts=data.paths?.[0]?.points?.coordinates?.map(p=>[p[1],p[0]]);
+    if(!pts) throw new Error("no geometry");
     routeLayer.clearLayers();
-    routePolyline = L.polyline(pts, { color:'#0074FF', weight:5, opacity:0.95 }).addTo(routeLayer);
-    map.fitBounds(routePolyline.getBounds(), { padding:[60,60], maxZoom:17 });
-  } catch (e) { alert("Erreur itinéraire"); }
+    routePolyline=L.polyline(pts,{color:"#0074FF",weight:5,opacity:0.95}).addTo(routeLayer);
+    map.fitBounds(routePolyline.getBounds(),{padding:[60,60],maxZoom:17});
+  }catch(e){alert("Erreur itinéraire");}
 }
 function clearItinerary(){
   routeLayer.clearLayers();
-  routePolyline = null;
+  routePolyline=null;
 }
-window.showAllClients = function(){
-  clientMarkers.forEach(m => m.addTo(map));
-};
 
 /* ========== BOUTONS EN BAS ========== */
 function createBottomButtons(){
-  const container = document.createElement("div");
-  container.style.position = "absolute";
-  container.style.bottom = "20px";
-  container.style.right = "20px";
-  container.style.zIndex = "2000";
-  container.style.display = "flex";
-  container.style.flexDirection = "column";
-  container.style.gap = "10px";
+  const container=document.createElement("div");
+  container.style.position="absolute";
+  container.style.bottom="20px";
+  container.style.right="20px";
+  container.style.zIndex="2000";
+  container.style.display="flex";
+  container.style.flexDirection="column";
+  container.style.gap="10px";
 
-  const btnStyle = `
-    background:#007bff;
-    color:white;
-    border:none;
-    padding:8px 12px;
-    border-radius:6px;
-    cursor:pointer;
-    font-size:14px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.2);
-  `;
+  const btnStyle=`background:#007bff;color:white;border:none;padding:8px 12px;border-radius:6px;
+    cursor:pointer;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.2);`;
 
-  // create toggle button (declared BEFORE usage)
-  const toggleBtn = document.createElement("button");
-  toggleBtn.id = "toggleView-bottom";
-  toggleBtn.innerText = "🛰️ Vue satellite";
-  toggleBtn.style.cssText = btnStyle;
+  const toggleBtn=document.createElement("button");
+  toggleBtn.innerText="🛰️ Vue satellite";
+  toggleBtn.style.cssText=btnStyle;
 
-  // create pos button
-  const posBtn = document.createElement("button");
-  posBtn.id = "myPosition-bottom";
-  posBtn.innerText = "📍 Ma position";
-  posBtn.style.cssText = btnStyle;
+  const posBtn=document.createElement("button");
+  posBtn.innerText="📍 Ma position";
+  posBtn.style.cssText=btnStyle;
 
-  // attach handlers AFTER creation
-  toggleBtn.addEventListener("click", ()=>{
-    satelliteMode = !satelliteMode;
+  toggleBtn.addEventListener("click",()=>{
+    satelliteMode=!satelliteMode;
     if(satelliteMode){
       map.addLayer(satelliteTiles);
-      map.addLayer(labelsLayer); // superpose labels sur le satellite
+      map.addLayer(labelsLayer);
       map.removeLayer(normalTiles);
-      toggleBtn.innerText = "🗺️ Vue normale";
-    } else {
+      toggleBtn.innerText="🗺️ Vue normale";
+    }else{
       map.addLayer(normalTiles);
       map.removeLayer(satelliteTiles);
       if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
-      toggleBtn.innerText = "🛰️ Vue satellite";
+      toggleBtn.innerText="🛰️ Vue satellite";
     }
   });
 
-  posBtn.addEventListener("click", ()=>{
-    if(userMarker) map.setView(userMarker.getLatLng(), 15);
+  posBtn.addEventListener("click",()=>{
+    if(userMarker) map.setView(userMarker.getLatLng(),15);
     else alert("Localisation en cours...");
   });
 
@@ -311,16 +263,15 @@ function createBottomButtons(){
   container.appendChild(posBtn);
   document.body.appendChild(container);
 
-  // Hide original top controls if present (keeps markup but hides visually)
-  const origToggle = document.getElementById('toggleView');
-  const origPos = document.getElementById('myPosition');
-  if(origToggle) origToggle.style.display = 'none';
-  if(origPos) origPos.style.display = 'none';
+  const origToggle=$id('toggleView');
+  const origPos=$id('myPosition');
+  if(origToggle) origToggle.style.display='none';
+  if(origPos) origPos.style.display='none';
 }
 
 createBottomButtons();
 
-/* clic droit -> ajout client */
-map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
+/* clic droit = ajout client */
+map.on('contextmenu', e=>ajouterClient(e.latlng.lat,e.latlng.lng));
 
 listenClients();
