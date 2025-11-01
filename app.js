@@ -73,40 +73,41 @@ function renommerClient(id, oldName){
   if(n) db.ref(`clients/${id}/name`).set(n);
 }
 function popupClientHtml(c){
-  const lienCommande = "https://ton-lien-de-commande.com"; // 🔗 Remplace-le plus tard par ton vrai lien
+  const commandeUrl = "https://ton-lien-de-commande.com"; // 🔹 Mets ici ton lien plus tard
 
   return `
     <div style="font-size:13px;">
       <b>${escapeHtml(c.name)}</b><br>
       <small style="color:#555">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br><br>
 
-      <button onclick="window.open('${lienCommande}', '_blank')" 
-        style="width:100%;padding:6px;background:#4CAF50;color:#fff;border:none;border-radius:4px;margin-bottom:8px;">
+      <button onclick="window.open('${commandeUrl}', '_blank')"
+        style="width:100%;padding:6px;background:#4CAF50;color:#fff;border:none;border-radius:4px">
         🛒 Passer commande
-      </button><br>
+      </button><br><br>
 
       <button onclick="calculerItineraire(${c.lat}, ${c.lng})"
-        style="width:100%;padding:6px;background:#0074FF;color:#fff;border:none;border-radius:4px;margin-bottom:8px;">
+        style="width:100%;padding:6px;background:#0074FF;color:#fff;border:none;border-radius:4px">
         🚗 Itinéraire
-      </button><br>
+      </button><br><br>
 
       <button onclick="clearItinerary()" 
-        style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px;margin-bottom:8px;">
+        style="width:100%;padding:6px;background:#ff9800;color:#fff;border:none;border-radius:4px">
         🧭 Enlever l’itinéraire
-      </button><br>
+      </button><br><br>
 
       <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')"
-        style="width:100%;padding:6px;background:#009688;color:#fff;border:none;border-radius:4px;margin-bottom:8px;">
+        style="width:100%;padding:6px;background:#009688;color:#fff;border:none;border-radius:4px">
         ✏️ Modifier nom
-      </button><br>
+      </button><br><br>
 
       <button onclick="supprimerClient('${c.id}')"
-        style="width:100%;padding:6px;background:#e53935;color:#fff;border:none;border-radius:4px;">
+        style="width:100%;padding:6px;background:#e53935;color:#fff;border:none;border-radius:4px">
         🗑️ Supprimer
       </button>
     </div>
   `;
 }
+
 
 function listenClients(){
   db.ref('clients').on('value', snap=>{
@@ -287,4 +288,5 @@ createBottomButtons();
 map.on('contextmenu', e=>ajouterClient(e.latlng.lat,e.latlng.lng));
 
 listenClients();
+
 
