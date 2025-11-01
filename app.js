@@ -1,4 +1,4 @@
-// ✅ app.js — Recherche, bouton reset, vue hybride & boutons repositionnés
+// ✅ app.js — Recherche, bouton reset, vue hybride & boutons repositionnés + labels gras foncé
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -18,15 +18,18 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
   subdomains: ['mt0','mt1','mt2','mt3']
 });
 
-// 🗺️ Layer d'étiquettes (labels) — Stamen "toner-labels" (fonds transparents, bonne superposition sur satellite)
+// 🗺️ Layer d'étiquettes (labels) — Stamen "toner-labels"
 const labelsLayer = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png', {
   subdomains: ['a','b','c','d'],
   maxZoom: 20,
   attribution: 'Map tiles by Stamen Design, CC BY 3.0 — Map data © OpenStreetMap contributors',
   opacity: 1.0,
-  // NOTE: ces tuiles sont déjà avec fond transparent (labels seulement)
 });
 
+// 🔧 Amélioration du contraste pour labels (simulateur "gras foncé")
+labelsLayer.on('tileload', function(e) {
+  e.tile.style.filter = "contrast(180%) brightness(90%) saturate(150%)";
+});
 
 /* ========== ICONS ========== */
 const clientIcon = L.icon({
@@ -250,20 +253,25 @@ function createBottomButtons(){
     box-shadow:0 2px 6px rgba(0,0,0,0.2);
   `;
 
- toggleBtn.onclick = ()=>{
-  satelliteMode = !satelliteMode;
-  if(satelliteMode){
-    map.addLayer(satelliteTiles);
-    map.addLayer(labelsLayer); // ← superpose les noms/étiquettes au-dessus du satellite
-    map.removeLayer(normalTiles);
-    toggleBtn.innerText = "🗺️ Vue normale";
-  } else {
-    map.addLayer(normalTiles);
-    map.removeLayer(satelliteTiles);
-    if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
-    toggleBtn.innerText = "🛰️ Vue satellite";
-  }
-};
+  const toggleBtn = document.createElement("button");
+  toggleBtn.id = "toggleView";
+  toggleBtn.innerText = "🛰️ Vue satellite";
+  toggleBtn.style.cssText = btnStyle;
+
+  toggleBtn.onclick = ()=>{
+    satelliteMode = !satelliteMode;
+    if(satelliteMode){
+      map.addLayer(satelliteTiles);
+      map.addLayer(labelsLayer); // superpose les noms sur la vue satellite
+      map.removeLayer(normalTiles);
+      toggleBtn.innerText = "🗺️ Vue normale";
+    } else {
+      map.addLayer(normalTiles);
+      map.removeLayer(satelliteTiles);
+      if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
+      toggleBtn.innerText = "🛰️ Vue satellite";
+    }
+  };
 
   const posBtn = document.createElement("button");
   posBtn.id = "myPosition";
@@ -285,4 +293,3 @@ createBottomButtons();
 map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
 
 listenClients();
-
