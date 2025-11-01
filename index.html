@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>Geotrack Livreurs</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- Manifest PWA + Icône -->
+  <!-- Manifest PWA + Icône (chemins complets vers le dépôt) -->
   <link rel="manifest" href="/Hanafi-Map/manifest.json">
   <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png">
 
-  <!-- Leaflet CSS (Sans integrity pour éviter le blocage SRI) -->
+  <!-- Leaflet CSS (sans integrity pour éviter blocage) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
   <!-- Leaflet Routing Machine CSS -->
@@ -29,52 +29,19 @@
       gap: 8px;
     }
 
-    /* Champ de recherche + bouton X intégré */
-    .search-container {
-      position: relative;
-      width: 220px;
-    }
-
-    #searchInput {
-      width: 100%;
-      padding: 8px 30px 8px 8px;
-      border: 2px solid #007bff;
-      border-radius: 6px;
-      font-size: 14px;
-    }
-
+    .search-container { position: relative; width: 220px; }
+    #searchInput { width: 100%; padding: 8px 30px 8px 8px; border: 2px solid #007bff; border-radius: 6px; font-size: 14px; }
     #clearSearch {
-      position: absolute;
-      right: 8px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: #ccc;
-      border: none;
-      border-radius: 50%;
-      width: 20px;
-      height: 20px;
-      font-weight: bold;
-      color: #333;
-      cursor: pointer;
-      display: none; /* caché par défaut */
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: #ccc; border: none; border-radius: 50%; width: 20px; height: 20px;
+      font-weight: bold; color: #333; cursor: pointer; display: none;
     }
-
-    #clearSearch:hover { background: #aaa; }
 
     .btn {
-      background: #007bff;
-      color: #fff;
-      border: none;
-      padding: 10px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      width: 150px;
-      text-align: center;
-      font-weight: bold;
+      background: #007bff; color: #fff; border: none; padding: 10px 12px; border-radius: 6px;
+      cursor: pointer; font-size: 14px; width: 150px; text-align: center; font-weight: bold;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
-
     .btn:hover { background: #0056b3; }
   </style>
 </head>
@@ -86,6 +53,8 @@
       <input id="searchInput" type="text" placeholder="🔍 Rechercher un client...">
       <button id="clearSearch">×</button>
     </div>
+
+    <!-- ces deux boutons seront cachés par le JS (on crée des boutons en bas) -->
     <button id="toggleView" class="btn">Vue Satellite</button>
     <button id="myPosition" class="btn">📍 Ma Position</button>
   </div>
@@ -126,7 +95,7 @@
     window.db = firebase.database();
   </script>
 
-  <!-- Script principal -->
+  <!-- script principal (chemin vers ton app.js dans le repo github pages) -->
   <script src="/Hanafi-Map/app.js"></script>
 
   <script>
@@ -135,7 +104,7 @@
       navigator.serviceWorker.register("/Hanafi-Map/service-worker.js").catch(e => console.warn("SW failed:", e));
     }
 
-    // Gestion du bouton "X" clair
+    // Gestion du bouton "X" local (affiche/masque)
     const input = document.getElementById('searchInput');
     const clearBtn = document.getElementById('clearSearch');
     input.addEventListener('input', () => { clearBtn.style.display = input.value ? 'block' : 'none'; });
