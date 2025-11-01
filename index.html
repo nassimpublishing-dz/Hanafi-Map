@@ -4,19 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hanafi Map</title>
+
+  <!-- ✅ Leaflet sans intégrité (corrigé) -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-o9N1j8MkzE2VZbT+JH0nH1yO7fX/58jY6F6W7F6Q7hU="
-    crossorigin=""
   />
   <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-sA+zZ4xq4u+8M4Jr4c0X58rBTtPlfW5FOS2MBoY+4H0="
-    crossorigin=""
-  ></script>
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+  </script>
+
+  <!-- 🔥 Firebase -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
   <style>
     html, body { margin: 0; height: 100%; }
     #map { height: 100%; width: 100%; }
