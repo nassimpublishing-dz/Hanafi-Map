@@ -5,74 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hanafi Map</title>
 
-  <!-- ✅ Leaflet sans intégrité (corrigé) -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
-  </script>
+  <!-- Leaflet (sans integrity ni crossorigin) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- 🔥 Firebase -->
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <style>
     html, body { margin: 0; height: 100%; }
-    #map { height: 100%; width: 100%; }
+    #map { height: 100vh; width: 100%; }
 
-    /* 🔎 Barre de recherche clients */
-    #searchInput {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      width: 200px;
-      z-index: 1000;
-      padding: 6px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-    }
-
-    /* ❌ bouton effacer client */
-    #clearSearch {
-      position: absolute;
-      top: 10px;
-      left: 215px;
-      z-index: 1000;
-      background: #f00;
-      color: #fff;
-      border: none;
-      padding: 6px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-
-    /* 🔍 Recherche de lieux */
-    #placeSearch {
-      position: absolute;
-      top: 60px;
-      left: 10px;
-      width: 200px;
-      z-index: 1000;
-      padding: 6px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-    }
-
-    /* ❌ bouton effacer lieu */
-    #clearPlaceSearch {
-      position: absolute;
-      top: 60px;
-      left: 215px;
-      z-index: 1000;
-      background: #f00;
-      color: #fff;
-      border: none;
-      padding: 6px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
+    #searchInput { position: absolute; top: 10px; left: 10px; width: 200px; z-index: 1000; padding: 6px; border: 1px solid #ccc; border-radius: 6px; }
+    #clearSearch { position: absolute; top: 10px; left: 215px; z-index: 1000; background: #f00; color: #fff; border: none; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+    #placeSearch { position: absolute; top: 60px; left: 10px; width: 200px; z-index: 1000; padding: 6px; border: 1px solid #ccc; border-radius: 6px; }
+    #clearPlaceSearch { position: absolute; top: 60px; left: 215px; z-index: 1000; background: #f00; color: #fff; border: none; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
   </style>
 </head>
 
@@ -86,47 +34,45 @@
   <div id="map"></div>
 
   <script>
-    // === Configuration Firebase ===
+    // === Configuration Firebase (valeurs que tu utilisais)
     const firebaseConfig = {
-      apiKey: "TON_API_KEY",
-      authDomain: "TON_DOMAINE.firebaseapp.com",
-      databaseURL: "https://TON_DATABASE.firebaseio.com",
-      projectId: "TON_PROJECT_ID",
-      storageBucket: "TON_BUCKET.appspot.com",
-      messagingSenderId: "TON_ID",
-      appId: "TON_APP_ID"
+      apiKey: "AIzaSyAtDTNbi_vMSrtHpHigy00quXOLXyGnQ9c",
+      authDomain: "hanafi-livraison.firebaseapp.com",
+      databaseURL: "https://hanafi-livraison-default-rtdb.firebaseio.com",
+      projectId: "hanafi-livraison",
+      storageBucket: "hanafi-livraison.firebasestorage.app",
+      messagingSenderId: "106630001469",
+      appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
     };
     firebase.initializeApp(firebaseConfig);
 
-    // === Initialisation de la carte ===
+    // === Initialisation carte
     const map = L.map('map').setView([36.7525, 3.04197], 12);
 
-    // Couches de base
     const planLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
     const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      subdomains: ['mt0','mt1','mt2','mt3'],
       attribution: '© Google Satellite'
     });
 
     let currentLayer = planLayer;
 
-    // === Icône clients ===
+    // === Icônes
     const clientIcon = L.icon({
-      iconUrl: '/Hanafi-Map/icons/magasin-delectronique.png',
-      iconSize: [40, 40],
-      iconAnchor: [20, 40],
-      popupAnchor: [0, -40]
+      iconUrl: '/Hanafi-Map/magasin-delectronique.png',
+      iconSize: [40,40],
+      iconAnchor: [20,40],
+      popupAnchor: [0,-40]
     });
 
-    // === Clients ===
+    // === Clients (markers)
     const clientMarkers = [];
-
     firebase.database().ref("clients").on("value", snapshot => {
       const clients = snapshot.val();
-      if (!clients) return;
+      if(!clients) return;
       clientMarkers.forEach(m => map.removeLayer(m));
       clientMarkers.length = 0;
 
@@ -134,31 +80,25 @@
         const c = clients[key];
         if (c.lat && c.lng) {
           const marker = L.marker([c.lat, c.lng], { icon: clientIcon }).addTo(map);
-          marker.bindPopup(`<b>${c.nom}</b><br>${c.adresse || ""}`);
-          marker.nom = (c.nom || "").toLowerCase();
+          marker.bindPopup(`<b>${c.name || c.nom}</b><br>${c.address || c.adresse || ""}`);
+          marker.searchName = (c.name || c.nom || "").toLowerCase();
           clientMarkers.push(marker);
         }
       });
     });
 
-    // === Recherche clients ===
+    // === Recherche clients
     const searchInput = document.getElementById("searchInput");
     const clearSearchBtn = document.getElementById("clearSearch");
 
     searchInput.addEventListener("input", () => {
       const term = searchInput.value.trim().toLowerCase();
-
       clientMarkers.forEach(m => map.removeLayer(m));
       if (term === "") {
         clientMarkers.forEach(m => m.addTo(map));
         return;
       }
-
-      clientMarkers.forEach(marker => {
-        if (marker.nom.startsWith(term)) {
-          marker.addTo(map);
-        }
-      });
+      clientMarkers.forEach(m => { if ((m.searchName || "").startsWith(term)) m.addTo(map); });
     });
 
     clearSearchBtn.onclick = () => {
@@ -166,18 +106,18 @@
       clientMarkers.forEach(m => m.addTo(map));
     };
 
-    // === Boutons bas de page ===
+    // === Boutons bas
     function createBottomButtons() {
-      const container = L.DomUtil.create('div', 'leaflet-bottom leaflet-right');
+      const container = L.DomUtil.create('div','leaflet-bottom leaflet-right');
       container.style.display = 'flex';
       container.style.flexDirection = 'column';
       container.style.gap = '8px';
       container.style.margin = '20px';
 
-      const toggleBtn = L.DomUtil.create('button', '', container);
+      const toggleBtn = L.DomUtil.create('button','', container);
       toggleBtn.innerText = "Vue Satellite";
-      toggleBtn.style.cssText = "background:#007bff;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);";
-      
+      toggleBtn.style.cssText = "background:#007bff;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;";
+
       toggleBtn.onclick = () => {
         if (currentLayer === planLayer) {
           map.removeLayer(planLayer);
@@ -192,62 +132,47 @@
         }
       };
 
-      const positionBtn = L.DomUtil.create('button', '', container);
-      positionBtn.innerText = "📍 Ma Position";
-      positionBtn.style.cssText = "background:#28a745;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.2);";
+      const posBtn = L.DomUtil.create('button','', container);
+      posBtn.innerText = "📍 Ma Position";
+      posBtn.style.cssText = "background:#28a745;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;";
 
-      positionBtn.onclick = () => {
+      posBtn.onclick = () => {
         if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(pos => {
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-            L.marker([lat, lng]).addTo(map).bindPopup("Vous êtes ici").openPopup();
-            map.setView([lat, lng], 14);
-          }, () => alert("Impossible d’obtenir votre position."));
-        }
+          navigator.geolocation.getCurrentPosition(p => {
+            const lat = p.coords.latitude, lng = p.coords.longitude;
+            L.marker([lat,lng]).addTo(map).bindPopup("Vous êtes ici").openPopup();
+            map.setView([lat,lng], 14);
+          }, () => alert("Impossible d'obtenir la position."));
+        } else alert("Géoloc non supportée.");
       };
 
       map.getContainer().appendChild(container);
     }
     createBottomButtons();
 
-    // === Recherche de lieux via Nominatim ===
+    // === Recherche de lieux via Nominatim
     const placeInput = document.getElementById("placeSearch");
     const clearPlaceBtn = document.getElementById("clearPlaceSearch");
     let placeMarker = null;
 
-    placeInput.addEventListener("keyup", function (e) {
-      const query = placeInput.value.trim();
-      if (query.length < 3) return;
-
-      if (e.key === "Enter") {
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`)
-          .then(response => response.json())
+    placeInput.addEventListener("keyup", function(e) {
+      const q = placeInput.value.trim();
+      if (q.length < 3) return;
+      if (e.key === 'Enter') {
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`)
+          .then(r => r.json())
           .then(results => {
-            if (results.length > 0) {
-              if (placeMarker) map.removeLayer(placeMarker);
-              const r = results[0];
-              const lat = parseFloat(r.lat);
-              const lon = parseFloat(r.lon);
-
-              placeMarker = L.marker([lat, lon])
-                .addTo(map)
-                .bindPopup(`<b>${r.display_name}</b>`)
-                .openPopup();
-
-              map.setView([lat, lon], 15);
-            } else {
-              alert("Aucun lieu trouvé !");
-            }
+            if (results.length === 0) return alert("Aucun lieu trouvé.");
+            const r0 = results[0];
+            if (placeMarker) map.removeLayer(placeMarker);
+            placeMarker = L.marker([parseFloat(r0.lat), parseFloat(r0.lon)]).addTo(map).bindPopup(`<b>${r0.display_name}</b>`).openPopup();
+            map.setView([parseFloat(r0.lat), parseFloat(r0.lon)], 15);
           })
-          .catch(err => console.error("Erreur Nominatim:", err));
+          .catch(err => console.error("Nominatim error", err));
       }
     });
 
-    clearPlaceBtn.onclick = () => {
-      placeInput.value = "";
-      if (placeMarker) map.removeLayer(placeMarker);
-    };
+    clearPlaceBtn.onclick = () => { placeInput.value = ""; if (placeMarker) map.removeLayer(placeMarker); };
   </script>
 </body>
 </html>
