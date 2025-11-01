@@ -1,40 +1,110 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hanafi Map</title>
 
-  <!-- Leaflet (sans integrity ni crossorigin) -->
+  <!-- Manifest & icône (chemins absolus pour GitHub Pages) -->
+  <link rel="manifest" href="/Hanafi-Map/manifest.json">
+  <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png">
+
+  <!-- Leaflet (sans integrity pour éviter le blocage) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <!-- Leaflet Routing Machine CSS (optionnel si tu l'utilises) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
 
   <style>
-    html, body { margin: 0; height: 100%; }
-    #map { height: 100vh; width: 100%; }
+    html, body { height:100%; margin:0; font-family: Arial, sans-serif; }
+    #map { width:100%; height:100vh; }
 
-    #searchInput { position: absolute; top: 10px; left: 10px; width: 200px; z-index: 1000; padding: 6px; border: 1px solid #ccc; border-radius: 6px; }
-    #clearSearch { position: absolute; top: 10px; left: 215px; z-index: 1000; background: #f00; color: #fff; border: none; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
-    #placeSearch { position: absolute; top: 60px; left: 10px; width: 200px; z-index: 1000; padding: 6px; border: 1px solid #ccc; border-radius: 6px; }
-    #clearPlaceSearch { position: absolute; top: 60px; left: 215px; z-index: 1000; background: #f00; color: #fff; border: none; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+    /* Contrôles en haut gauche (search + éventuellement autres boutons cachés) */
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .search-container { position: relative; width: 240px; }
+    #searchInput {
+      width: 100%;
+      padding: 8px 34px 8px 10px;
+      border: 2px solid #007bff;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    #clearSearch {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: #e0e0e0;
+      border: none;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-weight: bold;
+      display: none;
+    }
+
+    .btn {
+      background: #007bff;
+      color: #fff;
+      border: none;
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      width: 150px;
+      text-align: center;
+      font-weight: bold;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    .btn:hover { background: #0056b3; }
+
+    /* zone résultats recherche (injected by app.js) */
+    #searchResults { /* style minimal; overridden by app.js */ }
   </style>
 </head>
-
 <body>
-  <input id="searchInput" type="text" placeholder="🔍 Rechercher client..." />
-  <button id="clearSearch">❌</button>
 
-  <input id="placeSearch" type="text" placeholder="📍 Rechercher un lieu..." />
-  <button id="clearPlaceSearch">❌</button>
+  <div id="controls">
+    <div class="search-container">
+      <input id="searchInput" type="text" placeholder="🔍 Rechercher un client...">
+      <button id="clearSearch" title="Effacer">✕</button>
+    </div>
+
+    <!-- Ces boutons sont masqués par JS (createBottomButtons) et recréés en bas -->
+    <button id="toggleView" class="btn" style="display:none">Vue Satellite</button>
+    <button id="myPosition" class="btn" style="display:none">📍 Ma Position</button>
+  </div>
 
   <div id="map"></div>
 
+  <div style="position:absolute; bottom:6px; right:8px; z-index:999; font-size:11px; background:#fff; padding:4px 6px; border-radius:4px;">
+    © OpenStreetMap
+  </div>
+
+  <div id="routeSummary"
+       style="display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:99999;
+              background:rgba(0,0,0,0.75); color:#fff; padding:10px 14px; border-radius:10px;
+              font-weight:600; font-size:14px;">
+  </div>
+
+  <!-- Firebase SDK (v8) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
   <script>
-    // === Configuration Firebase (valeurs que tu utilisais)
+    // === Ta config Firebase (déjà utilisée précédemment) ===
     const firebaseConfig = {
       apiKey: "AIzaSyAtDTNbi_vMSrtHpHigy00quXOLXyGnQ9c",
       authDomain: "hanafi-livraison.firebaseapp.com",
@@ -45,134 +115,38 @@
       appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
     };
     firebase.initializeApp(firebaseConfig);
-
-    // === Initialisation carte
-    const map = L.map('map').setView([36.7525, 3.04197], 12);
-
-    const planLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
-
-    const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-      subdomains: ['mt0','mt1','mt2','mt3'],
-      attribution: '© Google Satellite'
-    });
-
-    let currentLayer = planLayer;
-
-    // === Icônes
-    const clientIcon = L.icon({
-      iconUrl: '/Hanafi-Map/magasin-delectronique.png',
-      iconSize: [40,40],
-      iconAnchor: [20,40],
-      popupAnchor: [0,-40]
-    });
-
-    // === Clients (markers)
-    const clientMarkers = [];
-    firebase.database().ref("clients").on("value", snapshot => {
-      const clients = snapshot.val();
-      if(!clients) return;
-      clientMarkers.forEach(m => map.removeLayer(m));
-      clientMarkers.length = 0;
-
-      Object.keys(clients).forEach(key => {
-        const c = clients[key];
-        if (c.lat && c.lng) {
-          const marker = L.marker([c.lat, c.lng], { icon: clientIcon }).addTo(map);
-          marker.bindPopup(`<b>${c.name || c.nom}</b><br>${c.address || c.adresse || ""}`);
-          marker.searchName = (c.name || c.nom || "").toLowerCase();
-          clientMarkers.push(marker);
-        }
-      });
-    });
-
-    // === Recherche clients
-    const searchInput = document.getElementById("searchInput");
-    const clearSearchBtn = document.getElementById("clearSearch");
-
-    searchInput.addEventListener("input", () => {
-      const term = searchInput.value.trim().toLowerCase();
-      clientMarkers.forEach(m => map.removeLayer(m));
-      if (term === "") {
-        clientMarkers.forEach(m => m.addTo(map));
-        return;
-      }
-      clientMarkers.forEach(m => { if ((m.searchName || "").startsWith(term)) m.addTo(map); });
-    });
-
-    clearSearchBtn.onclick = () => {
-      searchInput.value = "";
-      clientMarkers.forEach(m => m.addTo(map));
-    };
-
-    // === Boutons bas
-    function createBottomButtons() {
-      const container = L.DomUtil.create('div','leaflet-bottom leaflet-right');
-      container.style.display = 'flex';
-      container.style.flexDirection = 'column';
-      container.style.gap = '8px';
-      container.style.margin = '20px';
-
-      const toggleBtn = L.DomUtil.create('button','', container);
-      toggleBtn.innerText = "Vue Satellite";
-      toggleBtn.style.cssText = "background:#007bff;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;";
-
-      toggleBtn.onclick = () => {
-        if (currentLayer === planLayer) {
-          map.removeLayer(planLayer);
-          satelliteLayer.addTo(map);
-          currentLayer = satelliteLayer;
-          toggleBtn.innerText = "Vue Plan";
-        } else {
-          map.removeLayer(satelliteLayer);
-          planLayer.addTo(map);
-          currentLayer = planLayer;
-          toggleBtn.innerText = "Vue Satellite";
-        }
-      };
-
-      const posBtn = L.DomUtil.create('button','', container);
-      posBtn.innerText = "📍 Ma Position";
-      posBtn.style.cssText = "background:#28a745;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;";
-
-      posBtn.onclick = () => {
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(p => {
-            const lat = p.coords.latitude, lng = p.coords.longitude;
-            L.marker([lat,lng]).addTo(map).bindPopup("Vous êtes ici").openPopup();
-            map.setView([lat,lng], 14);
-          }, () => alert("Impossible d'obtenir la position."));
-        } else alert("Géoloc non supportée.");
-      };
-
-      map.getContainer().appendChild(container);
-    }
-    createBottomButtons();
-
-    // === Recherche de lieux via Nominatim
-    const placeInput = document.getElementById("placeSearch");
-    const clearPlaceBtn = document.getElementById("clearPlaceSearch");
-    let placeMarker = null;
-
-    placeInput.addEventListener("keyup", function(e) {
-      const q = placeInput.value.trim();
-      if (q.length < 3) return;
-      if (e.key === 'Enter') {
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`)
-          .then(r => r.json())
-          .then(results => {
-            if (results.length === 0) return alert("Aucun lieu trouvé.");
-            const r0 = results[0];
-            if (placeMarker) map.removeLayer(placeMarker);
-            placeMarker = L.marker([parseFloat(r0.lat), parseFloat(r0.lon)]).addTo(map).bindPopup(`<b>${r0.display_name}</b>`).openPopup();
-            map.setView([parseFloat(r0.lat), parseFloat(r0.lon)], 15);
-          })
-          .catch(err => console.error("Nominatim error", err));
-      }
-    });
-
-    clearPlaceBtn.onclick = () => { placeInput.value = ""; if (placeMarker) map.removeLayer(placeMarker); };
+    window.db = firebase.database();
   </script>
+
+  <!-- Ton script principal (app.js) placé à la racine du repo -->
+  <script src="/Hanafi-Map/app.js"></script>
+
+  <!-- Service Worker (si tu l'utilises) -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/Hanafi-Map/service-worker.js")
+        .then(()=>console.log("SW enregistré"))
+        .catch(e=>console.warn("SW failed:", e));
+    }
+
+    // Gestion du bouton X (clear search) — visible/masqué selon contenu
+    (function attachClearButton(){
+      const input = document.getElementById('searchInput');
+      const clearBtn = document.getElementById('clearSearch');
+      if(!input || !clearBtn) return;
+      input.addEventListener('input', ()=> {
+        clearBtn.style.display = input.value ? 'block' : 'none';
+      });
+      clearBtn.addEventListener('click', ()=> {
+        input.value = '';
+        clearBtn.style.display = 'none';
+        if(window.showAllClients) window.showAllClients();
+        // retire aussi la boite de résultats si présente
+        const r = document.getElementById('searchResults');
+        if(r) r.innerHTML = '';
+      });
+    })();
+  </script>
+
 </body>
 </html>
