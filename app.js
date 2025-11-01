@@ -1,4 +1,4 @@
-// ✅ app.js — version stable avec labels CartoDB (gras foncé), boutons en bas, recherche + reset OK
+// ✅ app.js — version stable + recherche clients + recherche lieux + labels gras + boutons bas
 
 /* ========== CONFIG ========== */
 const defaultCenter = [36.7119, 4.0459];
@@ -18,7 +18,7 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
   subdomains: ['mt0','mt1','mt2','mt3']
 });
 
-// 🗺️ Labels CartoDB (stables et légers)
+// 🗺️ Labels CartoDB (stables et contrastés)
 const labelsLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png', {
   subdomains: ['a','b','c','d'],
   maxZoom: 20,
@@ -26,7 +26,6 @@ const labelsLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_la
   opacity: 1.0
 });
 
-// 🔧 améliore le contraste pour simuler du “gras foncé”
 labelsLayer.on('tileload', e => {
   try { e.tile.style.filter = "contrast(180%) brightness(80%)"; }
   catch(err) { /* ignore */ }
@@ -52,6 +51,7 @@ let userMarker = null;
 let satelliteMode = false;
 let routePolyline = null;
 const clientMarkers = [];
+let placeMarker = null; // Pour la recherche de lieux
 
 /* ========== UTILS ========== */
 const $id = id => document.getElementById(id);
@@ -128,8 +128,8 @@ if('geolocation' in navigator){
   }, e=>console.warn('geo err',e), {enableHighAccuracy:true, maximumAge:2000, timeout:10000});
 }
 
-/* ========== RECHERCHE + CLEAR ========== */
-(function initSearch(){
+/* ========== RECHERCHE CLIENTS + CLEAR ========== */
+(function initClientSearch(){
   const input = document.getElementById("searchInput");
   if(!input) return;
   const resultsBox = document.createElement("div");
@@ -196,7 +196,35 @@ if('geolocation' in navigator){
   });
 })();
 
-/* ========== ROUTE ========== */
+/* ========== RECHERCHE DE LIEUX (NOMINATIM) ========== */
+(function initPlaceSearch(){
+  const placeInput = document.getElementById("placeSearch");
+  if(!placeInput) return;
+
+  placeInput.addEventListener("keyup", function(e){
+    const query = placeInput.value.trim();
+    if(query.length < 3) return;
+
+    if(e.key === "Enter"){
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`)
+        .then(r => r.json())
+        .then(results=>{
+          if(results.length > 0){
+            const r = results[0];
+            const lat = parseFloat(r.lat);
+            const lon = parseFloat(r.lon);
+            if(placeMarker) map.removeLayer(placeMarker);
+            placeMarker = L.marker([lat, lon]).addTo(map)
+              .bindPopup(`<b>${r.display_name}</b>`).openPopup();
+            map.setView([lat, lon], 15);
+          } else alert("Aucun lieu trouvé !");
+        })
+        .catch(err => console.error("Erreur Nominatim:", err));
+    }
+  });
+})();
+
+/* ========== ITINÉRAIRE ========== */
 async function calculerItineraire(destLat,destLng){
   if(!userMarker) return alert("Localisation en attente...");
   const me=userMarker.getLatLng();
@@ -262,11 +290,6 @@ function createBottomButtons(){
   container.appendChild(toggleBtn);
   container.appendChild(posBtn);
   document.body.appendChild(container);
-
-  const origToggle=$id('toggleView');
-  const origPos=$id('myPosition');
-  if(origToggle) origToggle.style.display='none';
-  if(origPos) origPos.style.display='none';
 }
 
 createBottomButtons();
