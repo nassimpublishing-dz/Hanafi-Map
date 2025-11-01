@@ -18,11 +18,15 @@ const satelliteTiles = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
   subdomains: ['mt0','mt1','mt2','mt3']
 });
 
-// 🗺️ Noms de rues transparents (superposition OSM)
-const osmLabels = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  opacity: 0.45, // transparence pour laisser voir le satellite
-  attribution: '© OpenStreetMap'
+// 🗺️ Layer d'étiquettes (labels) — Stamen "toner-labels" (fonds transparents, bonne superposition sur satellite)
+const labelsLayer = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png', {
+  subdomains: ['a','b','c','d'],
+  maxZoom: 20,
+  attribution: 'Map tiles by Stamen Design, CC BY 3.0 — Map data © OpenStreetMap contributors',
+  opacity: 1.0,
+  // NOTE: ces tuiles sont déjà avec fond transparent (labels seulement)
 });
+
 
 /* ========== ICONS ========== */
 const clientIcon = L.icon({
@@ -246,24 +250,20 @@ function createBottomButtons(){
     box-shadow:0 2px 6px rgba(0,0,0,0.2);
   `;
 
-  const toggleBtn = document.createElement("button");
-  toggleBtn.id = "toggleView";
-  toggleBtn.innerText = "🛰️ Vue satellite";
-  toggleBtn.style.cssText = btnStyle;
-  toggleBtn.onclick = ()=>{
-    satelliteMode = !satelliteMode;
-    if(satelliteMode){
-      map.addLayer(satelliteTiles);
-      map.addLayer(osmLabels); // ← superpose les noms
-      map.removeLayer(normalTiles);
-      toggleBtn.innerText = "🗺️ Vue normale";
-    } else {
-      map.addLayer(normalTiles);
-      map.removeLayer(satelliteTiles);
-      map.removeLayer(osmLabels);
-      toggleBtn.innerText = "🛰️ Vue satellite";
-    }
-  };
+ toggleBtn.onclick = ()=>{
+  satelliteMode = !satelliteMode;
+  if(satelliteMode){
+    map.addLayer(satelliteTiles);
+    map.addLayer(labelsLayer); // ← superpose les noms/étiquettes au-dessus du satellite
+    map.removeLayer(normalTiles);
+    toggleBtn.innerText = "🗺️ Vue normale";
+  } else {
+    map.addLayer(normalTiles);
+    map.removeLayer(satelliteTiles);
+    if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
+    toggleBtn.innerText = "🛰️ Vue satellite";
+  }
+};
 
   const posBtn = document.createElement("button");
   posBtn.id = "myPosition";
@@ -285,3 +285,4 @@ createBottomButtons();
 map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
 
 listenClients();
+
