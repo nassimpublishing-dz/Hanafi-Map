@@ -1,17 +1,20 @@
 /* ===========================================================
-   ✅ app.js — multi-livreurs (fix : init Firebase idempotente)
+   ✅ app.js — version fixe (évite double déclaration firebaseConfig)
+   - NE DÉCLARE PAS `firebaseConfig` / `db` au niveau global.
+   - Utilise window.firebaseConfig / window.db si disponibles.
+   - Initialise firebase seulement si nécessaire.
    =========================================================== */
 
-/* ========== CONFIG ========== */
+/* ========== CONFIG MAP ========== */
 const defaultCenter = [36.7119, 4.0459];
 const defaultZoom = 14;
 const GRAPHHOPPER_KEY = "2d4407fe-6ae8-4008-a2c7-c1ec034c8f10";
 
-/* ========== IDENTIFIANT DU LIVREUR (depuis URL) ========== */
+/* ========== RÉCUPÉRATION ID LIVREUR DE L'URL ========== */
 const urlParams = new URLSearchParams(window.location.search);
 const LIVREUR_ID = "livreur_" + (urlParams.get("livreur") || "1");
 
-/* ========== MAP INIT ========== */
+/* ========== INIT CARTE ========== */
 const map = L.map('map', { center: defaultCenter, zoom: defaultZoom });
 
 const normalTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -43,44 +46,64 @@ const livreurIcon = L.icon({
   iconAnchor: [25, 50]
 });
 
-/* ========== FIREBASE (init SAFE / idempotente) ========== */
+/* ========== FIREBASE — SAFE INIT (AUCUNE DÉCLARATION GLOBALE) ========== */
 /*
-  IMPORTANT :
-  - Si tu as déjà placé `firebaseConfig` et initialisé firebase dans index.html,
-    ce bloc *ne* redéclarera *pas* la config ni l'app.
-  - Si tu veux forcer une config différente, supprime l'initialisation existante
-    dans index.html ou adapte la variable globale window.firebaseConfig.
+  Comportement :
+  - Si tu as déjà mis une configuration dans index.html (ex: const firebaseConfig = {...}),
+    elle risque de ne PAS être accessible via window.firebaseConfig (car const/let ne créent pas window props).
+  - Pour éviter toute collision, on lit d'abord window.firebaseConfig (si tu l'as placé explicitement),
+    sinon on n'impose rien et on tente d'utiliser firebase si le script a déjà été initialisé.
+  - Si tu veux fournir une config *depuis index.html* accessible ici, mets-la sur window.firebaseConfig
+    (ex: window.firebaseConfig = {...}) au lieu de `const firebaseConfig = ...`.
 */
 
-// si aucune config globale n'existe, on la définit (REMPLACE les valeurs si besoin)
-if (typeof window.firebaseConfig === 'undefined') {
-  window.firebaseConfig = {
-    apiKey: "TON_API_KEY", // remplace si tu veux
-    authDomain: "hanafi-livraison.firebaseapp.com",
-    databaseURL: "https://hanafi-livraison-default-rtdb.firebaseio.com/",
-    projectId: "hanafi-livraison",
-    storageBucket: "hanafi-livraison.appspot.com",
-    messagingSenderId: "XXXXXXXXXXXX",
-    appId: "1:XXXXXXXXXXXX:web:XXXXXXXXXXXXXX"
-  };
+// Si tu veux une config par défaut (optionnel) — REMPLACE les valeurs si nécessaire.
+// ATTENTION : ne met pas ceci si tu veux forcer la config depuis index.html.
+// Ici on ne crée PAS une variable globale nommée `firebaseConfig`.
+if (!window.firebaseConfig) {
+  // Ne pas écrire ceci si tu fournis la config dans index.html explicitement.
+  // window.firebaseConfig = {
+  //   apiKey: "...",
+  //   authDomain: "...",
+  //   databaseURL: "...",
+  //   projectId: "...",
+  //   storageBucket: "...",
+  //   messagingSenderId: "...",
+  //   appId: "..."
+  // };
 }
 
-// initialise firebase uniquement s'il n'y a pas d'app déjà initialisée
+// Initialise firebase seulement si l'objet firebase existe et aucune app n'est initialisée
 if (typeof firebase !== 'undefined') {
-  if (!firebase.apps || firebase.apps.length === 0) {
-    firebase.initializeApp(window.firebaseConfig);
+  try {
+    if (!firebase.apps || firebase.apps.length === 0) {
+      if (window.firebaseConfig) {
+        firebase.initializeApp(window.firebaseConfig);
+      } else {
+        // Si aucun config n'est disponible, on ne fait rien et on loggue.
+        console.warn("Aucune configuration firebase trouvée dans window.firebaseConfig — Firebase non initialisé ici.");
+      }
+    } else {
+      // déjà initialisé — ok
+    }
+  } catch (e) {
+    console.warn("Erreur lors de l'initialisation Firebase (ignorée) : ", e);
   }
 } else {
-  console.warn("Firebase n'est pas chargé — vérifie que le script Firebase est inclus dans index.html");
+  console.warn("Le script firebase n'est pas chargé avant app.js — vérifie l'ordre des <script> dans index.html");
 }
 
-// db : si déjà présente, on la réutilise, sinon on crée
-if (typeof window.db === 'undefined') {
-  try { window.db = firebase.database(); } catch(e){ console.warn("Impossible d'initialiser db :", e); }
+// Référence DB : réutilise window.db si elle existe, sinon tente d'utiliser firebase.database()
+if (!window.db) {
+  if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+    try { window.db = firebase.database(); } catch(e) { console.warn("Impossible de créer window.db :", e); }
+  } else {
+    // window.db reste undefined
+  }
 }
 const db = window.db;
 
-/* ========== VARIABLES & LAYERS ========== */
+/* ========== LAYERS & STATE ========== */
 const clientsLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 let userMarker = null;
@@ -88,21 +111,21 @@ let routePolyline = null;
 let satelliteMode = false;
 const clientMarkers = [];
 
-/* ========== UTIL ========== */
+/* ========== UTILS ========== */
 const $id = id => document.getElementById(id);
-function escapeHtml(s){ return (s||"").toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function escapeHtml(s){return (s||"").toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 
-/* ========== CLIENTS CRUD ========== */
+/* ========== CLIENTS CRUD (stockés par livreur) ========== */
 function ajouterClient(lat,lng){
   const name = prompt("Nom du client ?");
   if(!name) return;
-  if (!db) return alert("DB non initialisée");
+  if (!db) return alert("Base de données non initialisée");
   const ref = db.ref(`clients/${LIVREUR_ID}`).push();
   ref.set({ name, lat, lng, createdAt: Date.now() });
 }
 function supprimerClient(id){
   if(!confirm("❌ Supprimer ce client ?")) return;
-  if (!db) return alert("DB non initialisée");
+  if (!db) return alert("Base de données non initialisée");
   db.ref(`clients/${LIVREUR_ID}/${id}`).remove();
 }
 function renommerClient(id, oldName){
@@ -112,24 +135,24 @@ function renommerClient(id, oldName){
 
 /* ========== POPUP HTML (avec bouton Passer commande) ========== */
 function popupClientHtml(c){
-  const commandeUrl = "https://ton-lien-de-commande.com"; // <-- remplace plus tard
+  const commandeUrl = "https://ton-lien-de-commande.com"; // ← remplace quand tu as ton URL
   return `
     <div style="font-size:13px; max-width:260px;">
-      <b>${escapeHtml(c.name)}</b><br>
+      <b>${escapeHtml(c.name || c.nom || "Client")}</b><br>
       ${c.adresse ? `<small style="color:#555">${escapeHtml(c.adresse)}</small><br>` : ''}
       ${c.createdAt ? `<small style="color:#777">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br>` : ''}
       <div style="margin-top:8px; display:flex; gap:6px; flex-direction:column;">
         <button onclick="window.open('${commandeUrl}','_blank')" style="background:#28a745;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🛒 Passer commande</button>
         <button onclick="calculerItineraire(${c.lat}, ${c.lng})" style="background:#0074FF;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🚗 Itinéraire</button>
         <button onclick="clearItinerary()" style="background:#ff9800;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🧭 Enlever itinéraire</button>
-        <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name)}')" style="background:#009688;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">✏️ Modifier</button>
+        <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name || c.nom || "")}')" style="background:#009688;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">✏️ Modifier</button>
         <button onclick="supprimerClient('${c.id}')" style="background:#e53935;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🗑️ Supprimer</button>
       </div>
     </div>
   `;
 }
 
-/* ========== LISTEN CLIENTS (charged par livreur) ========== */
+/* ========== LISTEN CLIENTS ========== */
 function listenClients(){
   if (!db) { console.warn("DB non initialisée — listenClients abandonné"); return; }
   db.ref(`clients/${LIVREUR_ID}`).on('value', snap=>{
@@ -142,7 +165,7 @@ function listenClients(){
       c.id = id;
       const m = L.marker([c.lat, c.lng], { icon: clientIcon });
       m.bindPopup(popupClientHtml(c));
-      m.clientName = (c.name||"").toLowerCase();
+      m.clientName = (c.name||c.nom||"").toLowerCase();
       m.clientData = c;
       clientsLayer.addLayer(m);
       clientMarkers.push(m);
@@ -162,7 +185,7 @@ if('geolocation' in navigator){
   }, e=>console.warn('geo err',e), {enableHighAccuracy:true, maximumAge:2000, timeout:10000});
 }
 
-/* ========== RECHERCHE + CLEAR ========== */
+/* ========== RECHERCHE CLIENTS ========== */
 (function initSearch(){
   const input = document.getElementById("searchInput");
   if(!input) return;
@@ -218,7 +241,7 @@ if('geolocation' in navigator){
 
     matches.forEach(m=>{
       const d=document.createElement("div");
-      d.textContent = m.clientData.name;
+      d.textContent = m.clientData.name || m.clientData.nom || "";
       d.style.padding="8px 10px";
       d.style.cursor="pointer";
       d.style.borderBottom="1px solid #eee";
@@ -299,7 +322,6 @@ function createBottomButtons(){
   if(origToggle) origToggle.style.display='none';
   if(origPos) origPos.style.display='none';
 }
-
 createBottomButtons();
 
 /* ========== CONTEXTMENU ========== */
