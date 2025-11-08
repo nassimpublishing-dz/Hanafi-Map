@@ -27,7 +27,6 @@
       gap: 8px;
     }
 
-    /* Champ de recherche + bouton X intégré */
     .search-container {
       position: relative;
       width: 220px;
@@ -86,7 +85,6 @@
       <input id="searchInput" type="text" placeholder="🔍 Rechercher un client...">
       <button id="clearSearch">×</button>
     </div>
-    <!-- 🔹 Boutons supprimés ici -->
   </div>
 
   <div id="map"></div>
@@ -101,14 +99,18 @@
               font-weight:600; font-size:14px;">
   </div>
 
-  <!-- Leaflet & Firebase -->
+  <!-- ✅ Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+  <!-- ✅ Firebase SDKs (ordre correct) -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script> <!-- Auth nécessaire -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    const firebaseConfig = {
+    // 🔹 Configuration Firebase
+    window.firebaseConfig = {
       apiKey: "AIzaSyAtDTNbi_vMSrtHpHigy00quXOLXyGnQ9c",
       authDomain: "hanafi-livraison.firebaseapp.com",
       databaseURL: "https://hanafi-livraison-default-rtdb.firebaseio.com",
@@ -117,20 +119,29 @@
       messagingSenderId: "106630001469",
       appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
     };
-    firebase.initializeApp(firebaseConfig);
-    window.db = firebase.database();
+
+    // ✅ Initialisation Firebase (évite double initialisation)
+    if (typeof firebase !== 'undefined' && (!firebase.apps || firebase.apps.length === 0)) {
+      firebase.initializeApp(window.firebaseConfig);
+    }
+
+    try {
+      window.db = firebase.database();
+    } catch (e) {
+      console.warn('Impossible de créer window.db', e);
+    }
   </script>
 
-  <!-- Script principal -->
+  <!-- ✅ Ton script principal -->
   <script src="/Hanafi-Map/app.js"></script>
 
   <script>
-    // Service Worker (PWA)
+    // ✅ Service Worker PWA
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Hanafi-Map/service-worker.js").catch(e => console.warn("SW failed:", e));
     }
 
-    // 🔹 Gestion du bouton "X"
+    // ✅ Gestion du bouton "X" dans la barre de recherche
     const input = document.getElementById('searchInput');
     const clearBtn = document.getElementById('clearSearch');
 
