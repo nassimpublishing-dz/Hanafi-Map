@@ -1,15 +1,26 @@
-/***************************************************************
- * app.js — Version complète et corrigée
- * -------------------------------------------------------------
- * Fonctions :
- *  - Authentifie le livreur selon l’URL (?livreur=1..6)
- *  - Met à jour la position GPS en temps réel dans Firebase
- *  - Affiche les clients sur la carte
- *  - Permet de calculer un itinéraire + distance + durée
- *  - Boutons : vue satellite et ma position
- ***************************************************************/
+/* ===========================================================
+   app.js — version fusionnée, stable et prête à coller
+   - Auth optionnelle (si firebase-auth chargé)
+   - Isolation par livreur via ?livreur=X  -> clients/{livreur_X}
+   - Itinéraire (GraphHopper) avec distance + durée
+   - Boutons flottants (satellite / ma position)
+   - Labels contrastés supportés
+   =========================================================== */
 
-// === CONFIG LIVREURS ===
+/* ========== CONFIG ========== */
+const defaultCenter = [36.7119, 4.0459];
+const defaultZoom = 15;
+const GRAPHHOPPER_KEY = "2d4407fe-6ae8-4008-a2c7-c1ec034c8f10";
+
+/* ========== RÉCUPÉRATION ID LIVREUR ========== */
+const urlParams = new URLSearchParams(window.location.search);
+const LIVREUR_INDEX = urlParams.get("livreur") || "1";            // ex: ?livreur=2
+const LIVREUR_ID = "livreur_" + LIVREUR_INDEX;
+
+/* ========== (optionnel) LISTE D'EMAILS POUR AUTH (si utilisée) ==========
+   => Si tu n'utilises pas l'auth email/pwd, tu peux laisser tel quel ou
+   remplacer par ton mécanisme préféré.
+*/
 const livreurEmails = {
   1: "livreur1@hanafi.dz",
   2: "livreur2@hanafi.dz",
@@ -18,175 +29,306 @@ const livreurEmails = {
   5: "livreur5@hanafi.dz",
   6: "livreur6@hanafi.dz"
 };
+// mot de passe commun (si tu utilises email+pwd)
+const livreurPassword = "hanafi2025";
 
-const livreurPassword = "hanafi2025"; // Mot de passe commun à tous
+/* ========== INIT CARTE ========== */
+const map = L.map("map", { center: defaultCenter, zoom: defaultZoom });
 
-// === INITIALISATION FIREBASE ===
-if (typeof firebase !== "undefined" && (!firebase.apps || firebase.apps.length === 0)) {
-  firebase.initializeApp(window.firebaseConfig);
+const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "© OpenStreetMap contributors",
+}).addTo(map);
+
+const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
+  maxZoom: 20,
+  subdomains: ["mt0", "mt1", "mt2", "mt3"],
+});
+
+const labelsLayer = L.tileLayer(
+  "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
+  { subdomains: ["a","b","c","d"], maxZoom: 20, attribution: "© CartoDB / OSM", opacity: 1.0 }
+);
+// simulate "bold" labels by boosting contrast when tiles load
+labelsLayer.on("tileload", (e) => { try { e.tile.style.filter = "contrast(180%) brightness(80%)"; } catch(_){} });
+
+/* ========== ICONES ========== */
+const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42]});
+const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [50,50], iconAnchor:[25,50]});
+
+/* ========== SAFE FIREBASE INIT ========== */
+/*
+ - On n'initialise firebase ici que si window.firebaseConfig est présent
+   et qu'aucune app n'est déjà initialisée (évite double-declare).
+ - window.db sera créé si possible -- sinon db restera undefined et le
+   code se désactivera proprement.
+*/
+if (typeof firebase !== "undefined") {
+  try {
+    if (!firebase.apps || firebase.apps.length === 0) {
+      if (window.firebaseConfig) {
+        firebase.initializeApp(window.firebaseConfig);
+      } else {
+        console.warn("window.firebaseConfig absent — Firebase non initialisé ici.");
+      }
+    }
+  } catch (e) { console.warn("Erreur init Firebase:", e); }
+} else {
+  console.warn("Script firebase non chargé avant app.js");
 }
 
-const db = firebase.database();
-const auth = firebase.auth();
+if (!window.db) {
+  try { if (typeof firebase !== "undefined" && firebase.apps?.length > 0) window.db = firebase.database(); }
+  catch (e) { console.warn("Impossible de créer window.db:", e); }
+}
+const db = window.db || null;
 
-// === AUTHENTIFICATION AUTOMATIQUE ===
-const urlParams = new URLSearchParams(window.location.search);
-const livreurId = urlParams.get("livreur");
-const email = livreurEmails[livreurId];
-
-if (!email) {
-  alert("Aucun identifiant de livreur valide dans l’URL !");
-  throw new Error("livreur non défini");
+/* ========== AUTH OPTIONNELLE (si firebase.auth disponible) ========== */
+const authAvailable = typeof firebase !== "undefined" && typeof firebase.auth === "function";
+if (authAvailable) {
+  const email = livreurEmails[LIVREUR_INDEX];
+  if (email) {
+    // essaie de se connecter automatiquement — si ça échoue on continue quand même (carches doivent gérer règles DB)
+    firebase.auth().signInWithEmailAndPassword(email, livreurPassword)
+      .then(u => {
+        console.log("✅ Connecté :", u.user.email);
+        // start app features that require auth (we still use DB via window.db)
+        startApp();
+      })
+      .catch(err => {
+        console.warn("Auth failed:", err.message);
+        // on continue quand même (peut-être que rules permettent la lecture)
+        startApp();
+      });
+  } else {
+    console.warn("Aucun email livreur pour index", LIVREUR_INDEX);
+    startApp();
+  }
+} else {
+  // pas d'auth dispo : on démarre quand même (lecture DB peut échouer si règles strictes)
+  startApp();
 }
 
-// Connexion anonyme (email préconfiguré)
-auth
-  .signInWithEmailAndPassword(email, livreurPassword)
-  .then((userCredential) => {
-    console.log("✅ Connecté :", userCredential.user.email);
-    initMap(); // lance la carte après connexion
-  })
-  .catch((error) => {
-    console.error("Erreur de connexion :", error.message);
-    alert("Erreur de connexion : " + error.message);
-  });
+/* ========== GLOBAL STATE ========== */
+let userMarker = null;
+let routeLayer = L.layerGroup().addTo(map);
+let routePolyline = null;
+let satelliteMode = false;
+const clientsLayer = L.layerGroup().addTo(map);
+const clientMarkers = [];
 
-// === INITIALISATION DE LA CARTE ===
-let map, markerLivreur, routingControl;
-let osmLayer, satelliteLayer;
+/* ========== UTIL ========== */
+const $id = id => document.getElementById(id);
+function escapeHtml(s){ return (s||"").toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-function initMap() {
-  map = L.map("map").setView([36.7525, 3.042], 12);
-
-  osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "© OpenStreetMap"
-  }).addTo(map);
-
-  satelliteLayer = L.tileLayer(
-    "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-    { attribution: "© Google Satellite" }
-  );
-
-  markerLivreur = L.marker([36.7525, 3.042]).addTo(map);
-  markerLivreur.bindPopup("📦 Vous êtes ici (Livreur " + livreurId + ")").openPopup();
-
-  trackPosition();
-  addUIButtons();
-  loadClients();
-}
-
-// === TRACKING GPS EN TEMPS RÉEL ===
-function trackPosition() {
-  if (!navigator.geolocation) {
-    alert("La géolocalisation n’est pas supportée sur ce navigateur.");
-    return;
+/* ========== START AFTER (optional) AUTH ==========
+   We wrap startup in startApp() so we can call it after auth attempt
+*/
+function startApp(){
+  createBottomButtons();
+  // start geolocation watcher
+  if ('geolocation' in navigator) {
+    navigator.geolocation.watchPosition(pos => {
+      const { latitude:lat, longitude:lng } = pos.coords;
+      if (!userMarker) {
+        userMarker = L.marker([lat,lng], { icon: livreurIcon }).addTo(map);
+        map.setView([lat,lng], 15);
+      } else userMarker.setLatLng([lat,lng]);
+      // push position to Firebase if available
+      try { if (db) db.ref(`livreurs/${LIVREUR_ID}`).set({ lat, lng, updatedAt: Date.now() }); } catch(e){ console.warn("Firebase write err",e); }
+    }, e => console.warn("geo err", e), { enableHighAccuracy:true, maximumAge:2000, timeout:10000 });
   }
 
-  navigator.geolocation.watchPosition(
-    (pos) => {
-      const { latitude, longitude } = pos.coords;
-      markerLivreur.setLatLng([latitude, longitude]);
-      map.setView([latitude, longitude]);
-
-      // Envoi dans Firebase
-      const ref = db.ref("livreurs/livreur_" + livreurId);
-      ref.set({
-        lat: latitude,
-        lng: longitude,
-        timestamp: Date.now()
-      }).catch(err => console.warn("Erreur Firebase:", err));
-    },
-    (err) => console.error("Erreur GPS :", err),
-    { enableHighAccuracy: true }
-  );
+  // start listening clients for this livreur
+  listenClients();
 }
 
-// === CHARGEMENT DES CLIENTS ===
-function loadClients() {
-  db.ref("clients").on("value", (snapshot) => {
-    const data = snapshot.val();
-    if (!data) return;
+/* ========== CLIENT CRUD (par livreur) ========== */
+function ajouterClient(lat,lng){
+  const name = prompt("Nom du client ?");
+  if(!name) return;
+  if(!db) return alert("Base de données non initialisée");
+  const ref = db.ref(`clients/${LIVREUR_ID}`).push();
+  ref.set({ name, lat, lng, createdAt: Date.now() });
+}
+function supprimerClient(id){
+  if(!confirm("❌ Supprimer ce client ?")) return;
+  if(!db) return alert("Base de données non initialisée");
+  db.ref(`clients/${LIVREUR_ID}/${id}`).remove();
+}
+function renommerClient(id, oldName){
+  const n = prompt("Nouveau nom :", oldName);
+  if(n && db) db.ref(`clients/${LIVREUR_ID}/${id}/name`).set(n);
+}
 
-    Object.keys(data).forEach((key) => {
-      const client = data[key];
-      if (!client.lat || !client.lng) return;
+/* ========== POPUP HTML ========== */
+function popupClientHtml(c){
+  const commandeUrl = "https://ton-lien-de-commande.com"; // remplace par ton lien réel plus tard
+  return `
+    <div style="font-size:13px; max-width:260px;">
+      <b>${escapeHtml(c.name || c.nom || "Client")}</b><br>
+      ${c.adresse ? `<small style="color:#555">${escapeHtml(c.adresse)}</small><br>` : ''}
+      ${c.createdAt ? `<small style="color:#777">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br>` : ''}
+      <div style="margin-top:8px; display:flex; gap:6px; flex-direction:column;">
+        <button onclick="window.open('${commandeUrl}','_blank')" style="background:#28a745;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🛒 Passer commande</button>
+        <button onclick="calculerItineraire(${c.lat}, ${c.lng})" style="background:#0074FF;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🚗 Itinéraire</button>
+        <button onclick="clearItinerary()" style="background:#ff9800;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🧭 Enlever itinéraire</button>
+        <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name || c.nom || "")}')" style="background:#009688;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">✏️ Modifier</button>
+        <button onclick="supprimerClient('${c.id}')" style="background:#e53935;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🗑️ Supprimer</button>
+      </div>
+    </div>
+  `;
+}
 
-      const marker = L.marker([client.lat, client.lng]).addTo(map);
-      marker.bindPopup(
-        `<b>${client.nom || "Client"}</b><br>
-         <button onclick="itineraireVers(${client.lat}, ${client.lng})">Itinéraire</button>`
-      );
+/* ========== LISTEN CLIENTS (PAR LIVREUR) ========== */
+function listenClients(){
+  if(!db){
+    console.warn("DB non initialisée — impossible d'écouter les clients");
+    return;
+  }
+  db.ref(`clients/${LIVREUR_ID}`).on('value', snap => {
+    clientsLayer.clearLayers();
+    clientMarkers.length = 0;
+    const data = snap.val();
+    if(!data) return;
+    Object.entries(data).forEach(([id,c])=>{
+      if(!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return;
+      c.id = id;
+      const m = L.marker([c.lat, c.lng], { icon: clientIcon });
+      m.bindPopup(popupClientHtml(c));
+      m.clientName = (c.name || c.nom || "").toLowerCase();
+      m.clientData = c;
+      clientsLayer.addLayer(m);
+      clientMarkers.push(m);
     });
   });
 }
 
-// === ITINÉRAIRE VERS UN CLIENT ===
-function itineraireVers(lat, lng) {
-  if (routingControl) map.removeControl(routingControl);
+/* ========== RECHERCHE CLIENTS UI ========== */
+(function initSearch(){
+  const input = $id('searchInput');
+  if(!input) return;
+  const resultsBox = document.createElement('div');
+  resultsBox.id = 'searchResults';
+  resultsBox.style.position='absolute';
+  resultsBox.style.top='45px';
+  resultsBox.style.left='10px';
+  resultsBox.style.zIndex='2000';
+  resultsBox.style.background='white';
+  resultsBox.style.border='1px solid #ccc';
+  resultsBox.style.borderRadius='6px';
+  resultsBox.style.maxHeight='220px';
+  resultsBox.style.overflowY='auto';
+  resultsBox.style.width='240px';
+  resultsBox.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';
+  document.body.appendChild(resultsBox);
 
-  routingControl = L.Routing.control({
-    waypoints: [
-      markerLivreur.getLatLng(),
-      L.latLng(lat, lng)
-    ],
-    routeWhileDragging: false,
-    geocoder: L.Control.Geocoder.nominatim(),
-    show: false
-  })
-    .on("routesfound", function (e) {
-      const route = e.routes[0];
-      const distanceKm = (route.summary.totalDistance / 1000).toFixed(2);
-      const dureeMin = Math.round(route.summary.totalTime / 60);
-      showRouteSummary(distanceKm, dureeMin);
-    })
-    .addTo(map);
+  input.addEventListener('input', ()=>{
+    const txt = input.value.trim().toLowerCase();
+    resultsBox.innerHTML = '';
+    if(txt.length < 1){ clientMarkers.forEach(m=>m.addTo(map)); return; }
+    const matches = clientMarkers.filter(m=>m.clientName.startsWith(txt));
+    if(matches.length === 0){
+      resultsBox.innerHTML = "<div style='padding:8px;color:#666;'>Aucun client</div>";
+      clientMarkers.forEach(m=>map.removeLayer(m));
+      return;
+    }
+    clientMarkers.forEach(m=>map.removeLayer(m));
+    matches.forEach(m=>m.addTo(map));
+    matches.forEach(m=>{
+      const d = document.createElement('div');
+      d.textContent = m.clientData.name || m.clientData.nom || "";
+      d.style.padding = "8px 10px";
+      d.style.cursor = "pointer";
+      d.style.borderBottom = "1px solid #eee";
+      d.onmouseover = ()=> d.style.background = "#f2f2f2";
+      d.onmouseout = ()=> d.style.background = "#fff";
+      d.onclick = ()=> m.openPopup();
+      resultsBox.appendChild(d);
+    });
+  });
+})();
+
+/* ========== ITINERAIRE (GRAPHOPPER) avec distance+durée ==========
+   Si tu préfères utiliser Leaflet Routing Machine, tu peux remplacer
+   par un contrôle L.Routing.control — ici on utilise directement GraphHopper
+*/
+async function calculerItineraire(destLat, destLng){
+  if(!userMarker) return alert("Localisation en attente...");
+  const me = userMarker.getLatLng();
+  try{
+    const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const path = data.paths?.[0];
+    if(!path || !path.points?.coordinates) throw new Error("Pas de géométrie");
+    const pts = path.points.coordinates.map(p => [p[1], p[0]]);
+    const distanceKm = (path.distance / 1000).toFixed(2);
+    const dureeMin = Math.round(path.time / 60000);
+    routeLayer.clearLayers();
+    routePolyline = L.polyline(pts, { color:"#0074FF", weight:5, opacity:0.95 }).addTo(routeLayer);
+    map.fitBounds(routePolyline.getBounds(), { padding:[60,60], maxZoom:17 });
+
+    // popup distance/durée
+    const center = routePolyline.getBounds().getCenter();
+    L.popup().setLatLng(center).setContent(`<b>Distance :</b> ${distanceKm} km<br><b>Durée :</b> ${dureeMin} min`).openOn(map);
+  }catch(e){
+    console.error("Erreur itinéraire :", e);
+    alert("Erreur lors du calcul de l’itinéraire.");
+  }
+}
+function clearItinerary(){ routeLayer.clearLayers(); routePolyline = null; }
+
+/* ========== BOUTONS FLOTTANTS (satellite / position) ========== */
+function createBottomButtons(){
+  const container = document.createElement('div');
+  container.style.position='absolute';
+  container.style.bottom='20px';
+  container.style.right='20px';
+  container.style.zIndex='2000';
+  container.style.display='flex';
+  container.style.flexDirection='column';
+  container.style.gap='10px';
+
+  const btnStyle = `background:#007bff;color:white;border:none;padding:8px 12px;border-radius:6px;
+    cursor:pointer;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.2);`;
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.innerText = '🛰️ Vue satellite';
+  toggleBtn.style.cssText = btnStyle;
+
+  const posBtn = document.createElement('button');
+  posBtn.innerText = '📍 Ma position';
+  posBtn.style.cssText = btnStyle;
+
+  toggleBtn.addEventListener('click', ()=>{
+    satelliteMode = !satelliteMode;
+    if(satelliteMode){
+      map.addLayer(satelliteTiles);
+      map.addLayer(labelsLayer);
+      map.removeLayer(normalTiles);
+      toggleBtn.innerText = '🗺️ Vue normale';
+    } else {
+      map.addLayer(normalTiles);
+      map.removeLayer(satelliteTiles);
+      if(map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
+      toggleBtn.innerText = '🛰️ Vue satellite';
+    }
+  });
+
+  posBtn.addEventListener('click', ()=>{
+    if(userMarker) map.setView(userMarker.getLatLng(), 15);
+    else alert("Localisation en cours...");
+  });
+
+  container.appendChild(toggleBtn);
+  container.appendChild(posBtn);
+  document.body.appendChild(container);
 }
 
-// === AFFICHAGE DE LA DISTANCE / DURÉE ===
-function showRouteSummary(distance, duree) {
-  const box = document.getElementById("routeSummary");
-  box.style.display = "block";
-  box.innerHTML = `🚗 Distance : <b>${distance} km</b> — ⏱️ Durée : <b>${duree} min</b>`;
-  setTimeout(() => (box.style.display = "none"), 15000);
-}
+/* ========== CONTEXT MENU (clic droit = ajouter client) ========== */
+map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
 
-// === AJOUT DES BOUTONS INTERACTIFS ===
-function addUIButtons() {
-  // 📍 Ma position
-  const myPosBtn = L.control({ position: "bottomright" });
-  myPosBtn.onAdd = function () {
-    const div = L.DomUtil.create("div", "btn");
-    div.textContent = "📍 Ma position";
-    div.onclick = () => {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], 15),
-          () => alert("Impossible d’obtenir la position.")
-        );
-      }
-    };
-    return div;
-  };
-  myPosBtn.addTo(map);
-
-  // 🗺️ Vue satellite
-  const satelliteBtn = L.control({ position: "bottomleft" });
-  satelliteBtn.onAdd = function () {
-    const div = L.DomUtil.create("div", "btn");
-    div.textContent = "🗺️ Vue satellite";
-    div.onclick = () => {
-      if (map.hasLayer(osmLayer)) {
-        map.removeLayer(osmLayer);
-        map.addLayer(satelliteLayer);
-        div.textContent = "🗺️ Vue carte";
-      } else {
-        map.removeLayer(satelliteLayer);
-        map.addLayer(osmLayer);
-        div.textContent = "🗺️ Vue satellite";
-      }
-    };
-    return div;
-  };
-  satelliteBtn.addTo(map);
-}
+/* ========== START LISTENERS (si auth a appelé startApp(), listenClients s'est lancé)
+   Si auth était absent, startApp() avait été appelé plus haut.
+*/
