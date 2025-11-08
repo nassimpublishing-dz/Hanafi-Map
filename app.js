@@ -1,5 +1,5 @@
 /* ===========================================================
-   ✅ app.js — version stable + itinéraire (distance + durée)
+   ✅ app.js — version finale (auth + itinéraire + multi-livreurs)
    =========================================================== */
 
 /* ========== CONFIG MAP ========== */
@@ -9,7 +9,50 @@ const GRAPHHOPPER_KEY = "2d4407fe-6ae8-4008-a2c7-c1ec034c8f10";
 
 /* ========== RÉCUPÉRATION ID LIVREUR ========== */
 const urlParams = new URLSearchParams(window.location.search);
-const LIVREUR_ID = "livreur_" + (urlParams.get("livreur") || "1");
+const LIVREUR_NUM = urlParams.get("livreur") || "1";
+const LIVREUR_ID = "livreur_" + LIVREUR_NUM;
+
+/* ========== AUTH LIVREUR (AUTO-CONNEXION) ========== */
+const LIVREUR_EMAILS = {
+  1: "livreur1@hanafi.dz",
+  2: "livreur2@hanafi.dz",
+  3: "livreur3@hanafi.dz",
+  4: "livreur4@hanafi.dz",
+  5: "livreur5@hanafi.dz",
+  6: "livreur6@hanafi.dz",
+};
+
+const LIVREUR_PASSWORDS = {
+  1: "hanafi001",
+  2: "hanafi002",
+  3: "hanafi003",
+  4: "hanafi004",
+  5: "hanafi005",
+  6: "hanafi006",
+};
+
+async function loginLivreur() {
+  const email = LIVREUR_EMAILS[LIVREUR_NUM];
+  const password = LIVREUR_PASSWORDS[LIVREUR_NUM];
+  if (!email || !password) return alert("Livreur non reconnu.");
+
+  try {
+    await firebase.auth().signInWithEmailAndPassword(email, password);
+    console.log("✅ Connecté :", email);
+  } catch (e) {
+    console.error("Erreur login :", e);
+    alert("Erreur de connexion Firebase : " + e.message);
+  }
+}
+
+firebase.auth().onAuthStateChanged(user => {
+  if (user) {
+    console.log("Connecté en tant que :", user.email);
+    listenClients(); // démarre la carte
+  } else {
+    loginLivreur();
+  }
+});
 
 /* ========== INIT CARTE ========== */
 const map = L.map("map", { center: defaultCenter, zoom: defaultZoom });
@@ -32,11 +75,6 @@ const labelsLayer = L.tileLayer(
     opacity: 1.0,
   }
 );
-labelsLayer.on("tileload", (e) => {
-  try {
-    e.tile.style.filter = "contrast(180%) brightness(80%)";
-  } catch (e) {}
-});
 
 /* ========== ICONES ========== */
 const clientIcon = L.icon({
@@ -52,13 +90,12 @@ const livreurIcon = L.icon({
 
 /* ========== FIREBASE INIT SAFE ========== */
 if (!window.firebaseConfig) {
-  // Laisse vide si ta config est dans index.html
+  console.warn("⚠️ Firebase config non trouvée dans index.html");
 }
 if (typeof firebase !== "undefined") {
   try {
     if (!firebase.apps || firebase.apps.length === 0) {
       if (window.firebaseConfig) firebase.initializeApp(window.firebaseConfig);
-      else console.warn("Aucune config Firebase trouvée — non initialisé ici.");
     }
   } catch (e) {
     console.warn("Erreur init Firebase :", e);
@@ -66,11 +103,7 @@ if (typeof firebase !== "undefined") {
 }
 if (!window.db) {
   if (typeof firebase !== "undefined" && firebase.apps?.length > 0) {
-    try {
-      window.db = firebase.database();
-    } catch (e) {
-      console.warn("Impossible de créer db :", e);
-    }
+    window.db = firebase.database();
   }
 }
 const db = window.db;
@@ -87,11 +120,7 @@ const clientMarkers = [];
 const $id = (id) => document.getElementById(id);
 function escapeHtml(s) {
   return (s || "").toString().replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[m]));
 }
 
@@ -115,7 +144,7 @@ function renommerClient(id, oldName) {
 
 /* ========== POPUP CLIENTS ========== */
 function popupClientHtml(c) {
-  const commandeUrl = "https://ton-lien-de-commande.com"; // à remplacer plus tard
+  const commandeUrl = "https://ton-lien-de-commande.com"; // à modifier plus tard
   return `
     <div style="font-size:13px; max-width:260px;">
       <b>${escapeHtml(c.name || c.nom || "Client")}</b><br>
@@ -172,79 +201,25 @@ if ("geolocation" in navigator) {
   );
 }
 
-/* ========== RECHERCHE CLIENTS ========== */
-(function initSearch() {
-  const input = document.getElementById("searchInput");
-  if (!input) return;
-  const resultsBox = document.createElement("div");
-  resultsBox.id = "searchResults";
-  resultsBox.style = `
-    position:absolute;top:45px;left:10px;z-index:2000;background:white;
-    border:1px solid #ccc;border-radius:6px;max-height:220px;overflow-y:auto;
-    width:240px;box-shadow:0 2px 8px rgba(0,0,0,0.15);`;
-  document.body.appendChild(resultsBox);
-  input.addEventListener("input", () => {
-    const txt = input.value.trim().toLowerCase();
-    resultsBox.innerHTML = "";
-    if (txt.length < 1) {
-      clientMarkers.forEach((m) => m.addTo(map));
-      return;
-    }
-    const matches = clientMarkers.filter((m) => m.clientName.startsWith(txt));
-    if (matches.length === 0) {
-      resultsBox.innerHTML = "<div style='padding:8px;color:#666;'>Aucun client</div>";
-      clientMarkers.forEach((m) => map.removeLayer(m));
-      return;
-    }
-    clientMarkers.forEach((m) => map.removeLayer(m));
-    matches.forEach((m) => m.addTo(map));
-    matches.forEach((m) => {
-      const d = document.createElement("div");
-      d.textContent = m.clientData.name || m.clientData.nom || "";
-      d.style = "padding:8px 10px;cursor:pointer;border-bottom:1px solid #eee;";
-      d.onmouseover = () => (d.style.background = "#f2f2f2");
-      d.onmouseout = () => (d.style.background = "#fff");
-      d.onclick = () => m.openPopup();
-      resultsBox.appendChild(d);
-    });
-  });
-})();
-
 /* ========== ROUTE (avec distance + durée) ========== */
 async function calculerItineraire(destLat, destLng) {
   if (!userMarker) return alert("Localisation en attente...");
-
   const me = userMarker.getLatLng();
-
   try {
     const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(res.status);
-
     const data = await res.json();
     const path = data.paths?.[0];
     if (!path || !path.points?.coordinates) throw new Error("Pas de géométrie");
-
     const pts = path.points.coordinates.map((p) => [p[1], p[0]]);
     const distanceKm = (path.distance / 1000).toFixed(2);
     const dureeMin = Math.round(path.time / 60000);
-
     routeLayer.clearLayers();
-    routePolyline = L.polyline(pts, {
-      color: "#0074FF",
-      weight: 5,
-      opacity: 0.95,
-    }).addTo(routeLayer);
+    routePolyline = L.polyline(pts, { color: "#0074FF", weight: 5, opacity: 0.95 }).addTo(routeLayer);
     map.fitBounds(routePolyline.getBounds(), { padding: [60, 60], maxZoom: 17 });
-
-    // ✅ Popup avec distance et durée
     const center = routePolyline.getBounds().getCenter();
-    const popup = L.popup()
-      .setLatLng(center)
-      .setContent(
-        `<b>Distance :</b> ${distanceKm} km<br><b>Durée :</b> ${dureeMin} min`
-      )
-      .openOn(map);
+    const popup = L.popup().setLatLng(center).setContent(`<b>Distance :</b> ${distanceKm} km<br><b>Durée :</b> ${dureeMin} min`).openOn(map);
   } catch (e) {
     console.error("Erreur itinéraire :", e);
     alert("Erreur lors du calcul de l’itinéraire.");
@@ -255,51 +230,5 @@ function clearItinerary() {
   routePolyline = null;
 }
 
-/* ========== BOUTONS FLOTTANTS ========== */
-function createBottomButtons() {
-  const container = document.createElement("div");
-  container.style = `
-    position:absolute;bottom:20px;right:20px;z-index:2000;
-    display:flex;flex-direction:column;gap:10px;`;
-  const btnStyle = `
-    background:#007bff;color:white;border:none;padding:8px 12px;border-radius:6px;
-    cursor:pointer;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.2);`;
-
-  const toggleBtn = document.createElement("button");
-  toggleBtn.innerText = "🛰️ Vue satellite";
-  toggleBtn.style.cssText = btnStyle;
-
-  const posBtn = document.createElement("button");
-  posBtn.innerText = "📍 Ma position";
-  posBtn.style.cssText = btnStyle;
-
-  toggleBtn.addEventListener("click", () => {
-    satelliteMode = !satelliteMode;
-    if (satelliteMode) {
-      map.addLayer(satelliteTiles);
-      map.addLayer(labelsLayer);
-      map.removeLayer(normalTiles);
-      toggleBtn.innerText = "🗺️ Vue normale";
-    } else {
-      map.addLayer(normalTiles);
-      map.removeLayer(satelliteTiles);
-      if (map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
-      toggleBtn.innerText = "🛰️ Vue satellite";
-    }
-  });
-
-  posBtn.addEventListener("click", () => {
-    if (userMarker) map.setView(userMarker.getLatLng(), 15);
-    else alert("Localisation en cours...");
-  });
-
-  container.append(toggleBtn, posBtn);
-  document.body.appendChild(container);
-}
-createBottomButtons();
-
 /* ========== CONTEXT MENU ========== */
 map.on("contextmenu", (e) => ajouterClient(e.latlng.lat, e.latlng.lng));
-
-/* ========== DÉMARRAGE ========== */
-listenClients();
