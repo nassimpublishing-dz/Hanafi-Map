@@ -103,5 +103,23 @@
 
   <!-- Script principal -->
   <script src="/Hanafi-Map/app.js"></script>
+
+  <!-- Affichage map après login -->
+  <script>
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (user) {
+        document.getElementById("loginContainer").style.display = "none";
+        document.getElementById("map").style.display = "block";
+        document.getElementById("logoutBtn").style.display = "block";
+        document.getElementById("controls").style.display = "flex";
+      } else {
+        document.getElementById("loginContainer").style.display = "block";
+        document.getElementById("map").style.display = "none";
+        document.getElementById("logoutBtn").style.display = "none";
+        document.getElementById("controls").style.display = "none";
+      }
+    });
+  </script>
+
 </body>
 </html>
