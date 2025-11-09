@@ -27,17 +27,16 @@ const auth = firebase.auth();
 const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
 const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [48,48], iconAnchor:[24,48] });
 
-/* ---------- MAP ---------- */
-const map = L.map("map").setView(defaultCenter, defaultZoom);
-const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+/* ---------- VARIABLES GLOBALES ---------- */
+let map = null;
+const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
 const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
   subdomains: ["mt0","mt1","mt2","mt3"], maxZoom: 20
 });
 let satelliteMode = false;
-
 let userMarker = null;
-let routeLayer = L.layerGroup().addTo(map);
-let clientsLayer = L.layerGroup().addTo(map);
+let routeLayer = null;
+let clientsLayer = null;
 let isAdmin = false;
 let CURRENT_UID = null;
 
@@ -57,12 +56,32 @@ firebase.auth().onAuthStateChanged(async (user) => {
       console.warn("Erreur récupération admin :", e);
     }
 
-    startApp();
+    // Initialise map et démarre l’app
+    initMapAndApp();
   } else {
     CURRENT_UID = null;
     console.log("❌ Déconnecté");
   }
 });
+
+/* ===========================================================
+   🚀 INIT MAP + APP
+   =========================================================== */
+function initMapAndApp() {
+  // Assure que la div #map a un height défini
+  const mapDiv = document.getElementById("map");
+  if (!mapDiv.style.height) mapDiv.style.height = "100vh";
+
+  // Initialise la map si pas encore faite
+  if (!map) {
+    map = L.map("map").setView(defaultCenter, defaultZoom);
+    normalTiles.addTo(map);
+    routeLayer = L.layerGroup().addTo(map);
+    clientsLayer = L.layerGroup().addTo(map);
+  }
+
+  startApp();
+}
 
 /* ===========================================================
    🚀 APP PRINCIPALE
