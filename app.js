@@ -1,5 +1,5 @@
 /* ===========================================================
-   app.js — Version stable avec AUTH, ADMIN et règles Firebase
+   app.js — Firebase v8, Auth, Admin et Livreurs
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
@@ -10,78 +10,78 @@ const GRAPHHOPPER_KEY = "2d4407fe-6ae8-4008-a2c7-c1ec034c8f10";
 const urlParams = new URLSearchParams(window.location.search);
 const LIVREUR_INDEX = urlParams.get("livreur") || "1";
 
-/* ---------- CONFIG FIREBASE ---------- */
-if (typeof firebase !== "undefined") {
-  if (!firebase.apps.length) {
-    if (window.firebaseConfig) {
-      firebase.initializeApp(window.firebaseConfig);
-    } else {
-      alert("Erreur : FirebaseConfig non défini !");
-    }
-  }
-}
-const db = firebase.database();
-const auth = firebase.auth();
-
 /* ---------- ICONES ---------- */
 const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
 const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [48,48], iconAnchor:[24,48] });
 
-/* ---------- VARIABLES GLOBALES ---------- */
-let map = null;
-const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
+/* ---------- MAP ---------- */
+const map = L.map("map").setView(defaultCenter, defaultZoom);
+const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
   subdomains: ["mt0","mt1","mt2","mt3"], maxZoom: 20
 });
 let satelliteMode = false;
+
 let userMarker = null;
-let routeLayer = null;
-let clientsLayer = null;
+let routeLayer = L.layerGroup().addTo(map);
+let clientsLayer = L.layerGroup().addTo(map);
+
 let isAdmin = false;
 let CURRENT_UID = null;
 
 /* ===========================================================
-   🔐 AUTH — Surveille la connexion Firebase
+   🔐 AUTH — Login/Logout
    =========================================================== */
-firebase.auth().onAuthStateChanged(async (user) => {
-  if (user) {
-    CURRENT_UID = user.uid;
-    console.log("✅ Connecté :", user.email);
+const auth = firebase.auth();
+const db = firebase.database();
 
-    try {
-      const adminSnap = await db.ref("admins/" + CURRENT_UID).get();
-      isAdmin = adminSnap.exists();
-      if (isAdmin) console.log("👑 Mode ADMIN activé");
-    } catch(e) {
-      console.warn("Erreur récupération admin :", e);
-    }
+document.getElementById("loginBtn").addEventListener("click", function() {
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value.trim();
+  const errorEl = document.getElementById("loginError");
 
-    // Initialise map et démarre l’app
-    initMapAndApp();
-  } else {
-    CURRENT_UID = null;
-    console.log("❌ Déconnecté");
+  if (!email || !password) {
+    errorEl.textContent = "Veuillez remplir tous les champs.";
+    return;
   }
+
+  auth.signInWithEmailAndPassword(email, password)
+      .then(() => { errorEl.textContent = ""; })
+      .catch(err => { errorEl.textContent = err.message; });
 });
 
-/* ===========================================================
-   🚀 INIT MAP + APP
-   =========================================================== */
-function initMapAndApp() {
-  // Assure que la div #map a un height défini
-  const mapDiv = document.getElementById("map");
-  if (!mapDiv.style.height) mapDiv.style.height = "100vh";
+document.getElementById("logoutBtn").addEventListener("click", function() {
+  auth.signOut();
+});
 
-  // Initialise la map si pas encore faite
-  if (!map) {
-    map = L.map("map").setView(defaultCenter, defaultZoom);
-    normalTiles.addTo(map);
-    routeLayer = L.layerGroup().addTo(map);
-    clientsLayer = L.layerGroup().addTo(map);
+/* ---------- Gestion affichage map après login ---------- */
+auth.onAuthStateChanged(async function(user) {
+  if (user) {
+    CURRENT_UID = user.uid;
+    document.getElementById("loginContainer").style.display = "none";
+    document.getElementById("map").style.display = "block";
+    document.getElementById("logoutBtn").style.display = "block";
+    document.getElementById("controls").style.display = "flex";
+
+    // Vérifie si c’est un admin
+    try {
+      const adminSnap = await db.ref("admins/" + CURRENT_UID).once("value");
+      isAdmin = adminSnap.exists() && adminSnap.val() === true;
+      if (isAdmin) console.log("👑 Mode ADMIN activé");
+    } catch(e) { console.warn("Erreur admin :", e); }
+
+    startApp();
+  } else {
+    CURRENT_UID = null;
+    isAdmin = false;
+    document.getElementById("loginContainer").style.display = "block";
+    document.getElementById("map").style.display = "none";
+    document.getElementById("logoutBtn").style.display = "none";
+    document.getElementById("controls").style.display = "none";
+    routeLayer.clearLayers();
+    clientsLayer.clearLayers();
   }
-
-  startApp();
-}
+});
 
 /* ===========================================================
    🚀 APP PRINCIPALE
