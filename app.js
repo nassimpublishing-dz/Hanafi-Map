@@ -1,312 +1,274 @@
 /* ===========================================================
-   app.js — Version finale (Firebase v8) avec GEOLOC corrigée
+   app.js — Version finale, stable et complète (Firebase v8)
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
-const defaultZoom = 17;
+const defaultZoom = 14;
 const GRAPHHOPPER_KEY = "2d4407fe-6ae8-4008-a2c7-c1ec034c8f10";
 
-/* ---------- CONFIG FIREBASE ---------- */
-const db = firebase.database();
-const auth = firebase.auth();
+/* ===== Sélecteurs HTML ===== */
+const loginContainer = document.getElementById("loginContainer");
+const mapDiv = document.getElementById("map");
+const logoutBtn = document.getElementById("logoutBtn");
+const controls = document.getElementById("controls");
+const emailInput = document.getElementById("email");
+const passwordInput = document.getElementById("password");
+const loginBtn = document.getElementById("loginBtn");
+const loginError = document.getElementById("loginError");
 
-/* ---------- ICONES ---------- */
-const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
-const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [48,48], iconAnchor:[24,48] });
-
-/* ---------- MAP (initialisée dès le chargement) ---------- */
-const map = L.map("map").setView(defaultCenter, defaultZoom);
-const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
-const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
-  subdomains: ["mt0","mt1","mt2","mt3"], maxZoom: 20
-});
-let satelliteMode = false;
-
-/* ---------- LAYERS & ETAT ---------- */
+/* ===== Variables globales ===== */
+let map;
 let userMarker = null;
-let routeLayer = L.layerGroup().addTo(map);
-let clientsLayer = L.layerGroup().addTo(map);
-let isAdmin = false;
-let CURRENT_UID = null;
+let routeLayer = null;
+let clientsLayer = null;
+let routePolyline = null;
+let satelliteMode = false;
+let currentUser = null;
+let clientMarkers = [];
 
-/* ---------- Helpers pour éviter doublons ---------- */
-let geoWatchId = null;
-let clientsRef = null;
-
-/* ===========================================================
-   🔐 AUTH — Gestion du login/logout
-   =========================================================== */
-document.getElementById("loginBtn").addEventListener("click", () => {
-  const email = document.getElementById("email").value.trim();
-  const password = document.getElementById("password").value;
+/* ===== Login / Logout ===== */
+loginBtn.addEventListener("click", async () => {
+  const email = emailInput.value.trim();
+  const password = passwordInput.value.trim();
   if (!email || !password) {
-    document.getElementById("loginError").textContent = "Veuillez remplir tous les champs";
+    loginError.textContent = "Veuillez entrer vos identifiants.";
     return;
   }
-  document.getElementById("loginError").textContent = "";
-  auth.signInWithEmailAndPassword(email, password)
-    .then(() => { /* Connexion réussie */ })
-    .catch(err => { document.getElementById("loginError").textContent = err.message; });
+  try {
+    await firebase.auth().signInWithEmailAndPassword(email, password);
+    loginError.textContent = "";
+  } catch (e) {
+    console.error("Auth failed:", e);
+    loginError.textContent = "Identifiants incorrects.";
+  }
 });
 
-document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
+logoutBtn.addEventListener("click", async () => {
+  await firebase.auth().signOut();
+});
 
-/* ---------- Affichage map après login (gère invalidateSize) ---------- */
-auth.onAuthStateChanged(async (user) => {
+/* ===== Surveille l’état de connexion ===== */
+firebase.auth().onAuthStateChanged((user) => {
   if (user) {
-    CURRENT_UID = user.uid;
-    document.getElementById("loginContainer").style.display = "none";
-    document.getElementById("map").style.display = "block";
-    document.getElementById("logoutBtn").style.display = "block";
-    document.getElementById("controls").style.display = "flex";
-
-    // invalidateSize pour corriger rendu Leaflet si #map était caché
-    setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 200);
-
-    // Vérifie admin (Firebase v8 -> once('value'))
-    try {
-      const snap = await db.ref("admins/" + CURRENT_UID).once("value");
-      isAdmin = snap.exists() && snap.val() === true;
-      if (isAdmin) console.log("👑 Mode ADMIN activé");
-    } catch(e) {
-      console.warn("Erreur récupération admin :", e);
-      isAdmin = false;
-    }
-
-    startApp();
+    console.log("✅ Connecté :", user.email);
+    currentUser = user;
+    loginContainer.style.display = "none";
+    logoutBtn.style.display = "block";
+    mapDiv.style.display = "block";
+    controls.style.display = "flex";
+    initMap();
   } else {
-    // cleanup
-    CURRENT_UID = null;
-    isAdmin = false;
-    document.getElementById("loginContainer").style.display = "block";
-    document.getElementById("map").style.display = "none";
-    document.getElementById("logoutBtn").style.display = "none";
-    document.getElementById("controls").style.display = "none";
-
-    // clear watchers & listeners
-    if (geoWatchId !== null) {
-      try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
-      geoWatchId = null;
-    }
-    if (clientsRef) {
-      clientsRef.off();
-      clientsRef = null;
-    }
-    routeLayer.clearLayers();
-    clientsLayer.clearLayers();
-    if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+    console.log("❌ Déconnecté");
+    currentUser = null;
+    loginContainer.style.display = "block";
+    logoutBtn.style.display = "none";
+    mapDiv.style.display = "none";
+    controls.style.display = "none";
+    if (map) map.remove();
   }
 });
 
-/* ===========================================================
-   🚀 APP PRINCIPALE
-   =========================================================== */
-function startApp() {
-  createBottomButtons();
-  watchPosition();
-  listenClients();
-  if (isAdmin) enableAdminTools();
-}
+/* ===== Initialisation de la carte ===== */
+function initMap() {
+  if (map) map.remove();
+  map = L.map("map").setView(defaultCenter, defaultZoom);
 
-/* ---------- GEOLOCALISATION CORRIGÉE ---------- */
-function watchPosition() {
-  if (!("geolocation" in navigator)) {
-    console.warn("Géolocalisation non supportée");
-    map.setView(defaultCenter, defaultZoom);
-    return;
-  }
+  const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors",
+  }).addTo(map);
 
-  // Première position rapide (fallback si le watch met du temps)
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const { latitude: lat, longitude: lng } = pos.coords;
-      if (!userMarker) userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
-      map.setView([lat, lng], 15);
-    },
-    (err) => {
-      console.warn("Erreur géoloc initiale :", err);
-      map.setView(defaultCenter, defaultZoom);
-    },
-    { enableHighAccuracy: false, timeout: 15000, maximumAge: 5000 }
+  const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
+    maxZoom: 20,
+    subdomains: ["mt0", "mt1", "mt2", "mt3"],
+  });
+
+  const labelsLayer = L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
+    { subdomains: ["a","b","c","d"], maxZoom: 20, opacity: 1.0 }
   );
 
-  // Supprime ancien watcher si existant
-  if (geoWatchId !== null) {
-    try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
-    geoWatchId = null;
-  }
+  const clientIcon = L.icon({
+    iconUrl: "/Hanafi-Map/magasin-delectronique.png",
+    iconSize: [42,42],
+    iconAnchor:[21,42]
+  });
+  const livreurIcon = L.icon({
+    iconUrl: "/Hanafi-Map/camion-dexpedition.png",
+    iconSize: [50,50],
+    iconAnchor:[25,50]
+  });
 
-  // Watch en continu (stocke l'id pour pouvoir clear)
-  geoWatchId = navigator.geolocation.watchPosition(
-    (pos) => {
-      const { latitude: lat, longitude: lng } = pos.coords;
+  routeLayer = L.layerGroup().addTo(map);
+  clientsLayer = L.layerGroup().addTo(map);
 
+  /* ===== GEOLOCALISATION ===== */
+  if ('geolocation' in navigator) {
+    navigator.geolocation.watchPosition((pos) => {
+      const { latitude:lat, longitude:lng } = pos.coords;
       if (!userMarker) {
-        userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
-        map.setView([lat, lng], 15);
-      } else {
-        userMarker.setLatLng([lat, lng]);
-      }
-
-      // Sauvegarde Firebase
-      if (CURRENT_UID) {
-        db.ref("livreurs/" + CURRENT_UID)
-          .set({ lat, lng, updatedAt: Date.now() })
-          .catch(e => console.warn("Firebase write err:", e));
-      }
-    },
-    (err) => {
-      console.warn("Erreur géoloc watch :", err);
-      // Timeout ou erreur -> map reste centrée sur la dernière position connue
-      if (!userMarker) map.setView(defaultCenter, defaultZoom);
-    },
-    {
-      enableHighAccuracy: false, // désactivé pour éviter timeout fréquents
-      maximumAge: 5000,
-      timeout: 30000
-    }
-  );
-}
-
-/* ---------- CLIENTS ---------- */
-function listenClients() {
-  if (!db || !CURRENT_UID) return;
-
-  // retire l'ancien listener si existant
-  if (clientsRef) {
-    try { clientsRef.off(); } catch(_) {}
-    clientsRef = null;
+        userMarker = L.marker([lat,lng], { icon: livreurIcon }).addTo(map);
+        map.setView([lat,lng], 15);
+      } else userMarker.setLatLng([lat,lng]);
+      try {
+        firebase.database().ref(`livreurs/${currentUser.uid}`).set({ lat, lng, updatedAt: Date.now() });
+      } catch (e) { console.warn("Firebase write err", e); }
+    }, (e) => console.warn("geo err", e), { enableHighAccuracy:false, timeout:30000, maximumAge:5000 });
+  } else {
+    map.setView(defaultCenter, defaultZoom);
   }
 
-  const path = isAdmin ? "clients" : `clients/${CURRENT_UID}`;
-  clientsRef = db.ref(path);
-  clientsRef.on("value", (snap) => {
+  /* ===== AJOUT CLIENTS ===== */
+  // 📱 Compatible mobile & PC (clic long ou clic droit)
+  map.on("contextmenu", e => ajouterClient(e.latlng.lat, e.latlng.lng, clientIcon));
+  map.on("click", (e) => {
+    // Clic normal pour mobile : confirmer ajout
+    if (confirm("Ajouter un client à cet emplacement ?")) {
+      ajouterClient(e.latlng.lat, e.latlng.lng, clientIcon);
+    }
+  });
+
+  /* ===== Boutons ===== */
+  createBottomButtons(map, normalTiles, satelliteTiles, labelsLayer);
+
+  /* ===== Charger clients ===== */
+  listenClients(clientIcon);
+}
+
+/* ===== Gestion des clients ===== */
+function ajouterClient(lat, lng, icon) {
+  if (!currentUser) return alert("Veuillez vous connecter.");
+  const name = prompt("Nom du client ?");
+  if (!name) return;
+  const ref = firebase.database().ref(`clients/${currentUser.uid}`).push();
+  ref.set({ name, lat, lng, createdAt: Date.now() })
+    .then(() => {
+      L.marker([lat, lng], { icon }).addTo(clientsLayer);
+      console.log("✅ Client ajouté :", name);
+    })
+    .catch(e => console.error("Erreur ajout client :", e));
+}
+
+function supprimerClient(id) {
+  if (!confirm("❌ Supprimer ce client ?")) return;
+  firebase.database().ref(`clients/${currentUser.uid}/${id}`).remove();
+}
+
+function renommerClient(id, oldName) {
+  const n = prompt("Nouveau nom :", oldName);
+  if (n) firebase.database().ref(`clients/${currentUser.uid}/${id}/name`).set(n);
+}
+
+/* ===== Charger clients du livreur connecté ===== */
+function listenClients(clientIcon) {
+  const ref = firebase.database().ref(`clients/${currentUser.uid}`);
+  ref.on("value", (snap) => {
     clientsLayer.clearLayers();
+    clientMarkers = [];
     const data = snap.val();
     if (!data) return;
-
-    if (isAdmin) {
-      Object.entries(data).forEach(([livreurUid, clients]) => {
-        if (!clients) return;
-        Object.entries(clients).forEach(([id, c]) => addClientMarker(livreurUid, id, c));
-      });
-    } else {
-      Object.entries(data).forEach(([id, c]) => addClientMarker(CURRENT_UID, id, c));
-    }
+    Object.entries(data).forEach(([id, c]) => {
+      if (!c || typeof c.lat !== "number" || typeof c.lng !== "number") return;
+      c.id = id;
+      const m = L.marker([c.lat, c.lng], { icon: clientIcon });
+      m.bindPopup(popupClientHtml(c));
+      clientsLayer.addLayer(m);
+      clientMarkers.push(m);
+    });
   });
 }
 
-function addClientMarker(livreurUid, id, c) {
-  if (!c || typeof c.lat !== "number" || typeof c.lng !== "number") return;
-  const marker = L.marker([c.lat, c.lng], { icon: clientIcon }).addTo(clientsLayer);
-  marker.bindPopup(popupClientHtml(livreurUid, id, c));
-}
-
-/* ---------- POPUP CLIENT ---------- */
-function popupClientHtml(livreurUid, id, c) {
-  const nom = c.name || c.nom || "Client";
-  const safeNom = encodeURIComponent(nom);
-  const safeLivreur = encodeURIComponent(livreurUid);
-  const safeId = encodeURIComponent(id);
-
+/* ===== Popups clients ===== */
+function popupClientHtml(c) {
   return `
-    <div style="font-size:13px;max-width:220px">
-      <b>${nom}</b><br>
-      <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
-        <button onclick="calculerItineraire(${c.lat},${c.lng})"
-          style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:5px;">🚗 Itinéraire</button>
-        ${isAdmin ? `
-        <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
-          style="background:#009688;color:#fff;border:none;padding:6px;border-radius:5px;">✏️ Modifier</button>
-        <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
-          style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:5px;">🗑️ Supprimer</button>` : ""}
+    <div style="font-size:13px; max-width:260px;">
+      <b>${escapeHtml(c.name || c.nom || "Client")}</b><br>
+      ${c.createdAt ? `<small style="color:#777">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br>` : ""}
+      <div style="margin-top:8px; display:flex; gap:6px; flex-direction:column;">
+        <button onclick="calculerItineraire(${c.lat}, ${c.lng})" style="background:#0074FF;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🚗 Itinéraire</button>
+        <button onclick="clearItinerary()" style="background:#ff9800;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🧭 Enlever itinéraire</button>
+        <button onclick="renommerClient('${c.id}', '${escapeHtml(c.name || c.nom || "")}')" style="background:#009688;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">✏️ Modifier</button>
+        <button onclick="supprimerClient('${c.id}')" style="background:#e53935;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600;">🗑️ Supprimer</button>
       </div>
-    </div>`;
+    </div>
+  `;
 }
 
-/* ---------- GESTION CLIENTS ---------- */
-function ajouterClient(livreurUid, lat, lng) {
-  const nom = prompt("Nom du client :");
-  if (!nom) return;
-  db.ref(`clients/${livreurUid}`).push({ name: nom, lat, lng, createdAt: Date.now() });
-}
-
-function renommerClient(livreurUid, id, oldName) {
-  const nouveau = prompt("Nouveau nom :", decodeURIComponent(oldName));
-  if (!nouveau) return;
-  db.ref(`clients/${livreurUid}/${id}/name`).set(nouveau);
-}
-
-function supprimerClient(livreurUid, id) {
-  if (!confirm("Supprimer ce client ?")) return;
-  db.ref(`clients/${livreurUid}/${id}`).remove();
-}
-
-/* ---------- OUTILS ADMIN ---------- */
-function enableAdminTools() {
-  map.on("contextmenu", (e) => {
-    const livreurUid = prompt("UID du livreur pour ce client :");
-    if (!livreurUid) return;
-    ajouterClient(livreurUid, e.latlng.lat, e.latlng.lng);
-  });
-}
-
-/* ---------- ITINÉRAIRE ---------- */
+/* ===== Itinéraire ===== */
 async function calculerItineraire(destLat, destLng) {
   if (!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
-  const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
   try {
+    const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
     const res = await fetch(url);
+    if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     const path = data.paths?.[0];
-    if (!path) return alert("Aucun itinéraire trouvé.");
+    if (!path?.points?.coordinates) throw new Error("Pas de géométrie");
     const pts = path.points.coordinates.map(p => [p[1], p[0]]);
+    const distanceKm = (path.distance / 1000).toFixed(2);
+    const dureeMin = Math.round(path.time / 60000);
     routeLayer.clearLayers();
-    L.polyline(pts, { color: "#0074FF", weight: 5 }).addTo(routeLayer);
-  } catch(e) {
+    routePolyline = L.polyline(pts, { color:"#0074FF", weight:5, opacity:0.95 }).addTo(routeLayer);
+    map.fitBounds(routePolyline.getBounds(), { padding:[60,60], maxZoom:17 });
+    const center = routePolyline.getBounds().getCenter();
+    L.popup().setLatLng(center).setContent(`<b>Distance :</b> ${distanceKm} km<br><b>Durée :</b> ${dureeMin} min`).openOn(map);
+  } catch (e) {
     console.error("Erreur itinéraire :", e);
-    alert("Impossible de récupérer l’itinéraire.");
+    alert("Erreur lors du calcul de l’itinéraire.");
   }
 }
+function clearItinerary() { routeLayer.clearLayers(); routePolyline = null; }
 
-/* ---------- BOUTONS FLOTTANTS (évite duplication) ---------- */
-function createBottomButtons() {
-  if (document.getElementById("mapButtons")) return; // déjà créé
-  const c = document.createElement("div");
-  c.id = "mapButtons";
-  c.style.position = "absolute";
-  c.style.bottom = "20px";
-  c.style.right = "20px";
-  c.style.display = "flex";
-  c.style.flexDirection = "column";
-  c.style.gap = "10px";
-  c.style.zIndex = "2000";
+/* ===== Boutons flottants ===== */
+function createBottomButtons(map, normalTiles, satelliteTiles, labelsLayer) {
+  const container = document.createElement("div");
+  container.style.position = "absolute";
+  container.style.bottom = "20px";
+  container.style.right = "20px";
+  container.style.zIndex = "2000";
+  container.style.display = "flex";
+  container.style.flexDirection = "column";
+  container.style.gap = "10px";
 
-  const btn = (txt) => {
-    const b = document.createElement("button");
-    b.textContent = txt;
-    b.style.cssText = `background:#007bff;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;`;
-    return b;
-  };
+  const btnStyle = `background:#007bff;color:white;border:none;padding:8px 12px;border-radius:6px;
+    cursor:pointer;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.2);`;
 
-  const btnSat = btn("🛰️ Vue satellite");
-  btnSat.onclick = () => {
+  const toggleBtn = document.createElement("button");
+  toggleBtn.innerText = "🛰️ Vue satellite";
+  toggleBtn.style.cssText = btnStyle;
+
+  const posBtn = document.createElement("button");
+  posBtn.innerText = "📍 Ma position";
+  posBtn.style.cssText = btnStyle;
+
+  toggleBtn.addEventListener("click", () => {
     satelliteMode = !satelliteMode;
     if (satelliteMode) {
       map.addLayer(satelliteTiles);
+      map.addLayer(labelsLayer);
       map.removeLayer(normalTiles);
-      btnSat.textContent = "🗺️ Vue normale";
+      toggleBtn.innerText = "🗺️ Vue normale";
     } else {
       map.addLayer(normalTiles);
       map.removeLayer(satelliteTiles);
-      btnSat.textContent = "🛰️ Vue satellite";
+      if (map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
+      toggleBtn.innerText = "🛰️ Vue satellite";
     }
-  };
+  });
 
-  const btnPos = btn("📍 Ma position");
-  btnPos.onclick = () => userMarker && map.setView(userMarker.getLatLng(), 15);
+  posBtn.addEventListener("click", () => {
+    if (userMarker) map.setView(userMarker.getLatLng(), 15);
+    else alert("Localisation en cours...");
+  });
 
-  c.append(btnSat, btnPos);
-  document.body.appendChild(c);
+  container.appendChild(toggleBtn);
+  container.appendChild(posBtn);
+  document.body.appendChild(container);
+}
+
+/* ===== Utilitaires ===== */
+function escapeHtml(s) {
+  return (s || "").toString().replace(/[&<>"']/g, m => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[m]));
 }
