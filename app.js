@@ -1,5 +1,5 @@
 /* ===========================================================
-   app.js — Version avec ADMIN & gestion clients sur carte
+   app.js — Version avec AUTH, ADMIN et gestion clients/livreurs
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
@@ -29,7 +29,7 @@ const livreurEmails = {
   4: "livreur4@hanafi.dz",
   5: "livreur5@hanafi.dz",
   6: "livreur6@hanafi.dz",
-  admin: "admin@hanafi.dz", // 👈 compte admin
+  admin: "admin@hanafi.dz",
 };
 const livreurPasswords = {
   1: "hanafi001",
@@ -38,7 +38,7 @@ const livreurPasswords = {
   4: "hanafi004",
   5: "hanafi005",
   6: "hanafi006",
-  admin: "adminhanafi", // 👈 mot de passe admin
+  admin: "adminhanafi",
 };
 
 /* ---------- ICONES ---------- */
@@ -58,79 +58,103 @@ let routeLayer = L.layerGroup().addTo(map);
 let clientsLayer = L.layerGroup().addTo(map);
 let isAdmin = false;
 
-/* ---------- AUTH ---------- */
-function autoLogin() {
-  const emailParam = urlParams.get("email") || livreurEmails[LIVREUR_INDEX];
-  const password = livreurPasswords[LIVREUR_INDEX];
-  auth.signInWithEmailAndPassword(emailParam, password)
-    .then((u) => {
-      console.log("✅ Connecté :", u.user.email);
-      if (u.user.email === livreurEmails.admin) {
+/* ===========================================================
+   🔐 AUTH — Suivi d’état Firebase
+   =========================================================== */
+
+let CURRENT_UID = null;
+
+if (typeof firebase !== "undefined" && typeof firebase.auth === "function") {
+  firebase.auth().onAuthStateChanged(user => {
+    if (user) {
+      CURRENT_UID = user.uid;
+      console.log("✅ Connecté :", user.email, "uid:", CURRENT_UID);
+      if (user.email === livreurEmails.admin) {
         isAdmin = true;
         console.log("👑 Mode ADMIN activé");
       }
-      startApp(u.user);
-    })
-    .catch((err) => {
-      console.warn("⚠️ Auth échouée :", err.message);
-      alert("Connexion échouée : " + err.message);
-    });
+      startApp(); // démarre l'app
+    } else {
+      CURRENT_UID = null;
+      console.log("❌ Déconnecté");
+    }
+  });
+} else {
+  // Pas d’auth disponible (SDK manquant)
+  startApp();
 }
 
-/* ---------- START ---------- */
-function startApp(user) {
+/* ===========================================================
+   🚀 FONCTIONS PRINCIPALES
+   =========================================================== */
+
+function startApp() {
   createBottomButtons();
-  watchPosition(user);
+  watchPosition();
   listenClients();
   if (isAdmin) enableAdminTools();
 }
 
-/* ---------- GEOLOC ---------- */
-function watchPosition(user) {
+/* ---------- GEOLOC : push position sous /livreurs/<uid> ---------- */
+function watchPosition() {
   if (!("geolocation" in navigator)) return;
   navigator.geolocation.watchPosition(
     (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
       if (!userMarker) {
         userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
+        map.setView([lat, lng], 15);
       } else userMarker.setLatLng([lat, lng]);
-      map.setView([lat, lng], 14);
-      if (!isAdmin) {
-        db.ref(`livreurs/${LIVREUR_ID}`).set({ lat, lng, updatedAt: Date.now() });
+
+      try {
+        if (db) {
+          const targetPath = CURRENT_UID ? `livreurs/${CURRENT_UID}` : `livreurs/${LIVREUR_ID}`;
+          db.ref(targetPath).set({ lat, lng, updatedAt: Date.now() })
+            .catch(e => console.warn("Firebase write err:", e));
+        }
+      } catch(e){
+        console.warn("Firebase write err", e);
       }
     },
     (err) => console.warn("Erreur géoloc", err),
-    { enableHighAccuracy: true }
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
   );
 }
 
-/* ---------- CLIENTS ---------- */
+/* ---------- CLIENTS : écoute sous /clients/<uid> ---------- */
 function listenClients() {
-  const refPath = isAdmin ? "clients" : `clients/${LIVREUR_ID}`;
-  db.ref(refPath).on("value", (snap) => {
+  if (!db) {
+    console.warn("DB non initialisée — impossible d'écouter les clients");
+    return;
+  }
+
+  const path = () => (isAdmin ? "clients" : (CURRENT_UID ? `clients/${CURRENT_UID}` : `clients/${LIVREUR_ID}`));
+
+  try { db.ref().off(); } catch(e){}
+
+  db.ref(path()).on("value", (snap) => {
     clientsLayer.clearLayers();
     const data = snap.val();
     if (!data) return;
 
     if (isAdmin) {
-      // Pour admin : boucle sur tous les livreurs
       Object.entries(data).forEach(([livreurId, clients]) => {
         Object.entries(clients).forEach(([id, c]) => addClientMarker(livreurId, id, c));
       });
     } else {
-      // Pour un livreur : un seul dossier
       Object.entries(data).forEach(([id, c]) => addClientMarker(LIVREUR_ID, id, c));
     }
   });
 }
 
+/* ---------- Ajout des marqueurs clients ---------- */
 function addClientMarker(livreurId, id, c) {
   if (!c || !c.lat || !c.lng) return;
   const marker = L.marker([c.lat, c.lng], { icon: clientIcon }).addTo(clientsLayer);
   marker.bindPopup(popupClientHtml(livreurId, id, c));
 }
 
-/* ---------- POPUP HTML ---------- */
+/* ---------- POPUP CLIENT ---------- */
 function popupClientHtml(livreurId, id, c) {
   const nom = c.name || c.nom || "Client";
   return `
@@ -145,7 +169,7 @@ function popupClientHtml(livreurId, id, c) {
     </div>`;
 }
 
-/* ---------- AJOUT / SUPPRESSION CLIENTS ---------- */
+/* ---------- GESTION CLIENTS ---------- */
 function ajouterClient(livreurId, lat, lng) {
   const nom = prompt("Nom du client :");
   if (!nom) return;
@@ -186,7 +210,7 @@ async function calculerItineraire(destLat, destLng) {
   L.polyline(pts, { color: "#0074FF", weight: 5 }).addTo(routeLayer);
 }
 
-/* ---------- BOUTONS ---------- */
+/* ---------- BOUTONS FLOTTANTS ---------- */
 function createBottomButtons() {
   const c = document.createElement("div");
   c.style.position = "absolute";
@@ -224,7 +248,3 @@ function createBottomButtons() {
   c.append(btnSat, btnPos);
   document.body.appendChild(c);
 }
-
-/* ---------- LANCEMENT ---------- */
-autoLogin();
-
