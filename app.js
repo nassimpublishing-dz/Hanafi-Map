@@ -1,14 +1,10 @@
 /* ===========================================================
-   app.js — Firebase v8, Auth, Admin et Livreurs
+   app.js — Version Firebase v8 compatible
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
 const defaultZoom = 17;
 const GRAPHHOPPER_KEY = "2d4407fe-6ae8-4008-a2c7-c1ec034c8f10";
-
-/* ---------- PARAMS ---------- */
-const urlParams = new URLSearchParams(window.location.search);
-const LIVREUR_INDEX = urlParams.get("livreur") || "1";
 
 /* ---------- ICONES ---------- */
 const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
@@ -25,61 +21,63 @@ let satelliteMode = false;
 let userMarker = null;
 let routeLayer = L.layerGroup().addTo(map);
 let clientsLayer = L.layerGroup().addTo(map);
-
 let isAdmin = false;
 let CURRENT_UID = null;
 
-/* ===========================================================
-   🔐 AUTH — Login/Logout
-   =========================================================== */
-const auth = firebase.auth();
-const db = firebase.database();
+/* ---------- AUTH + LOGIN FORM ---------- */
+const loginContainer = document.getElementById("loginContainer");
+const mapDiv = document.getElementById("map");
+const logoutBtn = document.getElementById("logoutBtn");
+const controlsDiv = document.getElementById("controls");
+const loginBtn = document.getElementById("loginBtn");
+const loginError = document.getElementById("loginError");
 
-document.getElementById("loginBtn").addEventListener("click", function() {
-  const email = document.getElementById("email").value.trim();
-  const password = document.getElementById("password").value.trim();
-  const errorEl = document.getElementById("loginError");
+loginBtn.addEventListener("click", () => {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  loginError.textContent = "";
 
-  if (!email || !password) {
-    errorEl.textContent = "Veuillez remplir tous les champs.";
+  if(!email || !password) {
+    loginError.textContent = "Veuillez remplir email et mot de passe.";
     return;
   }
 
-  auth.signInWithEmailAndPassword(email, password)
-      .then(() => { errorEl.textContent = ""; })
-      .catch(err => { errorEl.textContent = err.message; });
+  firebase.auth().signInWithEmailAndPassword(email, password)
+    .then(() => console.log("Connexion réussie"))
+    .catch(err => loginError.textContent = err.message);
 });
 
-document.getElementById("logoutBtn").addEventListener("click", function() {
-  auth.signOut();
+logoutBtn.addEventListener("click", () => {
+  firebase.auth().signOut();
 });
 
-/* ---------- Gestion affichage map après login ---------- */
-auth.onAuthStateChanged(async function(user) {
+/* ---------- ON AUTH STATE CHANGE ---------- */
+firebase.auth().onAuthStateChanged(async (user) => {
   if (user) {
     CURRENT_UID = user.uid;
-    document.getElementById("loginContainer").style.display = "none";
-    document.getElementById("map").style.display = "block";
-    document.getElementById("logoutBtn").style.display = "block";
-    document.getElementById("controls").style.display = "flex";
+    loginContainer.style.display = "none";
+    mapDiv.style.display = "block";
+    logoutBtn.style.display = "block";
+    controlsDiv.style.display = "flex";
 
-    // Vérifie si c’est un admin
+    // Vérifie si c'est un admin
     try {
-      const adminSnap = await db.ref("admins/" + CURRENT_UID).once("value");
-      isAdmin = adminSnap.exists() && adminSnap.val() === true;
+      const snap = await firebase.database().ref("admins/" + CURRENT_UID).get();
+      isAdmin = snap.exists();
       if (isAdmin) console.log("👑 Mode ADMIN activé");
-    } catch(e) { console.warn("Erreur admin :", e); }
+    } catch(e) { console.warn("Erreur vérification admin:", e); }
 
     startApp();
   } else {
     CURRENT_UID = null;
     isAdmin = false;
-    document.getElementById("loginContainer").style.display = "block";
-    document.getElementById("map").style.display = "none";
-    document.getElementById("logoutBtn").style.display = "none";
-    document.getElementById("controls").style.display = "none";
-    routeLayer.clearLayers();
+    loginContainer.style.display = "block";
+    mapDiv.style.display = "none";
+    logoutBtn.style.display = "none";
+    controlsDiv.style.display = "none";
     clientsLayer.clearLayers();
+    routeLayer.clearLayers();
+    if(userMarker) { map.removeLayer(userMarker); userMarker = null; }
   }
 });
 
@@ -90,7 +88,7 @@ function startApp() {
   createBottomButtons();
   watchPosition();
   listenClients();
-  if (isAdmin) enableAdminTools();
+  if(isAdmin) enableAdminTools();
 }
 
 /* ---------- GEOLOCALISATION ---------- */
@@ -105,7 +103,7 @@ function watchPosition() {
       } else userMarker.setLatLng([lat, lng]);
 
       if (CURRENT_UID) {
-        db.ref("livreurs/" + CURRENT_UID)
+        firebase.database().ref("livreurs/" + CURRENT_UID)
           .set({ lat, lng, updatedAt: Date.now() })
           .catch(e => console.warn("Firebase write err:", e));
       }
@@ -117,15 +115,14 @@ function watchPosition() {
 
 /* ---------- CLIENTS ---------- */
 function listenClients() {
-  if (!db || !CURRENT_UID) return;
-
+  if(!CURRENT_UID) return;
   const path = isAdmin ? "clients" : `clients/${CURRENT_UID}`;
-  db.ref(path).on("value", (snap) => {
+  firebase.database().ref(path).on("value", snap => {
     clientsLayer.clearLayers();
     const data = snap.val();
-    if (!data) return;
+    if(!data) return;
 
-    if (isAdmin) {
+    if(isAdmin) {
       Object.entries(data).forEach(([livreurUid, clients]) => {
         Object.entries(clients).forEach(([id, c]) => addClientMarker(livreurUid, id, c));
       });
@@ -136,18 +133,14 @@ function listenClients() {
 }
 
 function addClientMarker(livreurUid, id, c) {
-  if (!c || typeof c.lat !== "number" || typeof c.lng !== "number") return;
+  if(!c || typeof c.lat !== "number" || typeof c.lng !== "number") return;
   const marker = L.marker([c.lat, c.lng], { icon: clientIcon }).addTo(clientsLayer);
   marker.bindPopup(popupClientHtml(livreurUid, id, c));
 }
 
 /* ---------- POPUP CLIENT ---------- */
 function popupClientHtml(livreurUid, id, c) {
-  const nom = c.name || c.nom || "Client";
-  const safeNom = encodeURIComponent(nom);
-  const safeLivreur = encodeURIComponent(livreurUid);
-  const safeId = encodeURIComponent(id);
-
+  const nom = c.name || "Client";
   return `
     <div style="font-size:13px;max-width:220px">
       <b>${nom}</b><br>
@@ -155,9 +148,9 @@ function popupClientHtml(livreurUid, id, c) {
         <button onclick="calculerItineraire(${c.lat},${c.lng})"
           style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:5px;">🚗 Itinéraire</button>
         ${isAdmin ? `
-        <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
+        <button onclick="renommerClient('${livreurUid}','${id}','${nom}')"
           style="background:#009688;color:#fff;border:none;padding:6px;border-radius:5px;">✏️ Modifier</button>
-        <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
+        <button onclick="supprimerClient('${livreurUid}','${id}')"
           style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:5px;">🗑️ Supprimer</button>` : ""}
       </div>
     </div>`;
@@ -166,46 +159,45 @@ function popupClientHtml(livreurUid, id, c) {
 /* ---------- GESTION CLIENTS ---------- */
 function ajouterClient(livreurUid, lat, lng) {
   const nom = prompt("Nom du client :");
-  if (!nom) return;
-  db.ref(`clients/${livreurUid}`).push({ name: nom, lat, lng, createdAt: Date.now() });
+  if(!nom) return;
+  firebase.database().ref(`clients/${livreurUid}`).push({ name: nom, lat, lng, createdAt: Date.now() });
 }
 
 function renommerClient(livreurUid, id, oldName) {
-  const nouveau = prompt("Nouveau nom :", decodeURIComponent(oldName));
-  if (!nouveau) return;
-  db.ref(`clients/${livreurUid}/${id}/name`).set(nouveau);
+  const nouveau = prompt("Nouveau nom :", oldName);
+  if(!nouveau) return;
+  firebase.database().ref(`clients/${livreurUid}/${id}/name`).set(nouveau);
 }
 
 function supprimerClient(livreurUid, id) {
-  if (!confirm("Supprimer ce client ?")) return;
-  db.ref(`clients/${livreurUid}/${id}`).remove();
+  if(!confirm("Supprimer ce client ?")) return;
+  firebase.database().ref(`clients/${livreurUid}/${id}`).remove();
 }
 
 /* ---------- OUTILS ADMIN ---------- */
 function enableAdminTools() {
-  map.on("contextmenu", (e) => {
+  map.on("contextmenu", e => {
     const livreurUid = prompt("UID du livreur pour ce client :");
-    if (!livreurUid) return;
+    if(!livreurUid) return;
     ajouterClient(livreurUid, e.latlng.lat, e.latlng.lng);
   });
 }
 
 /* ---------- ITINÉRAIRE ---------- */
 async function calculerItineraire(destLat, destLng) {
-  if (!userMarker) return alert("Localisation en attente...");
+  if(!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
   const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
-  
   try {
     const res = await fetch(url);
     const data = await res.json();
     const path = data.paths?.[0];
-    if (!path) return alert("Aucun itinéraire trouvé.");
+    if(!path) return alert("Aucun itinéraire trouvé.");
     const pts = path.points.coordinates.map(p => [p[1], p[0]]);
     routeLayer.clearLayers();
-    L.polyline(pts, { color: "#0074FF", weight: 5 }).addTo(routeLayer);
+    L.polyline(pts, { color:"#0074FF", weight:5 }).addTo(routeLayer);
   } catch(e) {
-    console.error("Erreur itinéraire :", e);
+    console.error("Erreur itinéraire:", e);
     alert("Impossible de récupérer l’itinéraire.");
   }
 }
@@ -221,7 +213,7 @@ function createBottomButtons() {
   c.style.gap = "10px";
   c.style.zIndex = "2000";
 
-  const btn = (txt) => {
+  const btn = txt => {
     const b = document.createElement("button");
     b.textContent = txt;
     b.style.cssText = `background:#007bff;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;`;
@@ -231,15 +223,8 @@ function createBottomButtons() {
   const btnSat = btn("🛰️ Vue satellite");
   btnSat.onclick = () => {
     satelliteMode = !satelliteMode;
-    if (satelliteMode) {
-      map.addLayer(satelliteTiles);
-      map.removeLayer(normalTiles);
-      btnSat.textContent = "🗺️ Vue normale";
-    } else {
-      map.addLayer(normalTiles);
-      map.removeLayer(satelliteTiles);
-      btnSat.textContent = "🛰️ Vue satellite";
-    }
+    if(satelliteMode) { map.addLayer(satelliteTiles); map.removeLayer(normalTiles); btnSat.textContent="🗺️ Vue normale"; }
+    else { map.addLayer(normalTiles); map.removeLayer(satelliteTiles); btnSat.textContent="🛰️ Vue satellite"; }
   };
 
   const btnPos = btn("📍 Ma position");
