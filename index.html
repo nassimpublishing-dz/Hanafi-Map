@@ -5,7 +5,6 @@
   <title>Geotrack Livreurs</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Manifest PWA + Icône -->
   <link rel="manifest" href="/Hanafi-Map/manifest.json" />
   <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png" />
 
@@ -14,52 +13,63 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 
   <style>
-    body, html { height:100%; margin:0; font-family: Arial, sans-serif; }
-    #map { width:100%; height:100vh; }
+    body, html { height:100%; margin:0; font-family: Arial, sans-serif; background:#f0f2f5; }
+    #map { width:100%; height:100vh; display:none; }
 
-    #controls {
-      position:absolute; top:10px; left:10px; z-index:9999;
-      display:flex; flex-direction:column; gap:8px;
+    #loginContainer {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      background:white; padding:30px 40px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.2);
+      text-align:center; width:280px;
     }
+    #loginContainer h2 { margin-bottom:20px; color:#007bff; }
+    #loginContainer input {
+      display:block; width:100%; margin-bottom:12px; padding:10px; font-size:14px;
+      border:1px solid #ccc; border-radius:6px;
+    }
+    #loginBtn {
+      background:#007bff; color:#fff; border:none; padding:10px; width:100%;
+      border-radius:6px; cursor:pointer; font-weight:bold;
+    }
+    #loginBtn:hover { background:#0056b3; }
+    #loginError { color:red; margin-top:8px; font-size:13px; }
 
+    #logoutBtn {
+      position:absolute; top:10px; right:10px; z-index:9999;
+      background:#dc3545; color:white; border:none; padding:8px 12px; border-radius:6px;
+      cursor:pointer; font-weight:bold;
+    }
+    #logoutBtn:hover { background:#b52a36; }
+
+    #controls { position:absolute; top:10px; left:10px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
     .search-container { position:relative; width:220px; }
-
-    #searchInput {
-      width:100%; padding:8px 30px 8px 8px;
-      border:2px solid #007bff; border-radius:6px; font-size:14px;
-    }
-
+    #searchInput { width:100%; padding:8px 30px 8px 8px; border:2px solid #007bff; border-radius:6px; font-size:14px; }
     #clearSearch {
-      position:absolute; right:8px; top:50%; transform:translateY(-50%);
-      background:#ccc; border:none; border-radius:50%;
-      width:20px; height:20px; font-weight:bold; color:#333;
-      cursor:pointer; display:none;
+      position:absolute; right:8px; top:50%; transform:translateY(-50%); background:#ccc; border:none;
+      border-radius:50%; width:20px; height:20px; font-weight:bold; color:#333; cursor:pointer; display:none;
     }
-
-    .btn {
-      background:#007bff; color:#fff; border:none;
-      padding:10px 12px; border-radius:6px; cursor:pointer;
-      font-size:14px; width:150px; text-align:center;
-      font-weight:bold; box-shadow:0 2px 6px rgba(0,0,0,0.2);
-    }
-
-    .btn:hover { background:#0056b3; }
   </style>
 </head>
-
 <body>
 
-  <div id="controls">
+  <!-- Login -->
+  <div id="loginContainer">
+    <h2>Connexion Livreur</h2>
+    <input id="email" type="email" placeholder="Email" />
+    <input id="password" type="password" placeholder="Mot de passe" />
+    <button id="loginBtn">Se connecter</button>
+    <p id="loginError"></p>
+  </div>
+
+  <!-- Carte -->
+  <div id="map"></div>
+
+  <button id="logoutBtn" style="display:none;">Se déconnecter</button>
+
+  <div id="controls" style="display:none;">
     <div class="search-container">
       <input id="searchInput" type="text" placeholder="🔍 Rechercher un client..." />
       <button id="clearSearch">×</button>
     </div>
-  </div>
-
-  <div id="map"></div>
-
-  <div style="position:absolute; bottom:4px; right:6px; z-index:999; font-size:11px; background:#fff; padding:2px 4px; border-radius:4px;">
-    © OpenStreetMap
   </div>
 
   <div id="routeSummary"
@@ -72,14 +82,14 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
-  <!-- Firebase SDKs v8 (ordre IMPORTANT) -->
+  <!-- Firebase SDK v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
-  <!-- Configuration & initialisation Firebase -->
+  <!-- Configuration Firebase -->
   <script>
-    window.firebaseConfig = {
+    const firebaseConfig = {
       apiKey: "AIzaSyAtDTNbi_vMSrtHpHigy00quXOLXyGnQ9c",
       authDomain: "hanafi-livraison.firebaseapp.com",
       databaseURL: "https://hanafi-livraison-default-rtdb.firebaseio.com",
@@ -88,41 +98,10 @@
       messagingSenderId: "106630001469",
       appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
     };
-
-    // Initialise Firebase une seule fois
-    if (!firebase.apps.length) {
-      firebase.initializeApp(window.firebaseConfig);
-    }
-
-    // Expose Firebase globalement
-    window.db = firebase.database();
-    window.auth = firebase.auth();
+    firebase.initializeApp(firebaseConfig);
   </script>
 
   <!-- Script principal -->
   <script src="/Hanafi-Map/app.js"></script>
-
-  <script>
-    // Service Worker (PWA)
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/Hanafi-Map/service-worker.js")
-        .catch(e => console.warn("SW failed:", e));
-    }
-
-    // Gestion du bouton "X"
-    const input = document.getElementById('searchInput');
-    const clearBtn = document.getElementById('clearSearch');
-
-    input.addEventListener('input', () => {
-      clearBtn.style.display = input.value ? 'block' : 'none';
-    });
-
-    clearBtn.addEventListener('click', () => {
-      input.value = '';
-      clearBtn.style.display = 'none';
-      if (window.showAllClients) window.showAllClients();
-    });
-  </script>
-
 </body>
 </html>
