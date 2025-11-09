@@ -12,8 +12,12 @@ const LIVREUR_INDEX = urlParams.get("livreur") || "1";
 
 /* ---------- CONFIG FIREBASE ---------- */
 if (typeof firebase !== "undefined") {
-  if (!firebase.apps.length && window.firebaseConfig) {
-    firebase.initializeApp(window.firebaseConfig);
+  if (!firebase.apps.length) {
+    if (window.firebaseConfig) {
+      firebase.initializeApp(window.firebaseConfig);
+    } else {
+      alert("Erreur : FirebaseConfig non défini !");
+    }
   }
 }
 const db = firebase.database();
@@ -40,17 +44,17 @@ let CURRENT_UID = null;
 /* ===========================================================
    🔐 AUTH — Surveille la connexion Firebase
    =========================================================== */
-
 firebase.auth().onAuthStateChanged(async (user) => {
   if (user) {
     CURRENT_UID = user.uid;
     console.log("✅ Connecté :", user.email);
 
-    // Vérifie si c’est un admin
-    const adminSnap = await db.ref("admins/" + CURRENT_UID).get();
-    if (adminSnap.exists()) {
-      isAdmin = true;
-      console.log("👑 Mode ADMIN activé");
+    try {
+      const adminSnap = await db.ref("admins/" + CURRENT_UID).get();
+      isAdmin = adminSnap.exists();
+      if (isAdmin) console.log("👑 Mode ADMIN activé");
+    } catch(e) {
+      console.warn("Erreur récupération admin :", e);
     }
 
     startApp();
@@ -63,7 +67,6 @@ firebase.auth().onAuthStateChanged(async (user) => {
 /* ===========================================================
    🚀 APP PRINCIPALE
    =========================================================== */
-
 function startApp() {
   createBottomButtons();
   watchPosition();
@@ -95,9 +98,8 @@ function watchPosition() {
 
 /* ---------- CLIENTS ---------- */
 function listenClients() {
-  if (!db) return;
+  if (!db || !CURRENT_UID) return;
 
-  // L’admin écoute tous les clients, un livreur écoute uniquement les siens
   const path = isAdmin ? "clients" : `clients/${CURRENT_UID}`;
   db.ref(path).on("value", (snap) => {
     clientsLayer.clearLayers();
@@ -123,6 +125,10 @@ function addClientMarker(livreurUid, id, c) {
 /* ---------- POPUP CLIENT ---------- */
 function popupClientHtml(livreurUid, id, c) {
   const nom = c.name || c.nom || "Client";
+  const safeNom = encodeURIComponent(nom);
+  const safeLivreur = encodeURIComponent(livreurUid);
+  const safeId = encodeURIComponent(id);
+
   return `
     <div style="font-size:13px;max-width:220px">
       <b>${nom}</b><br>
@@ -130,9 +136,9 @@ function popupClientHtml(livreurUid, id, c) {
         <button onclick="calculerItineraire(${c.lat},${c.lng})"
           style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:5px;">🚗 Itinéraire</button>
         ${isAdmin ? `
-        <button onclick="renommerClient('${livreurUid}','${id}','${nom}')"
+        <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
           style="background:#009688;color:#fff;border:none;padding:6px;border-radius:5px;">✏️ Modifier</button>
-        <button onclick="supprimerClient('${livreurUid}','${id}')"
+        <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
           style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:5px;">🗑️ Supprimer</button>` : ""}
       </div>
     </div>`;
@@ -144,11 +150,13 @@ function ajouterClient(livreurUid, lat, lng) {
   if (!nom) return;
   db.ref(`clients/${livreurUid}`).push({ name: nom, lat, lng, createdAt: Date.now() });
 }
+
 function renommerClient(livreurUid, id, oldName) {
-  const nouveau = prompt("Nouveau nom :", oldName);
+  const nouveau = prompt("Nouveau nom :", decodeURIComponent(oldName));
   if (!nouveau) return;
   db.ref(`clients/${livreurUid}/${id}/name`).set(nouveau);
 }
+
 function supprimerClient(livreurUid, id) {
   if (!confirm("Supprimer ce client ?")) return;
   db.ref(`clients/${livreurUid}/${id}`).remove();
@@ -168,13 +176,19 @@ async function calculerItineraire(destLat, destLng) {
   if (!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
   const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  const path = data.paths?.[0];
-  if (!path) return alert("Aucun itinéraire trouvé.");
-  const pts = path.points.coordinates.map(p => [p[1], p[0]]);
-  routeLayer.clearLayers();
-  L.polyline(pts, { color: "#0074FF", weight: 5 }).addTo(routeLayer);
+  
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    const path = data.paths?.[0];
+    if (!path) return alert("Aucun itinéraire trouvé.");
+    const pts = path.points.coordinates.map(p => [p[1], p[0]]);
+    routeLayer.clearLayers();
+    L.polyline(pts, { color: "#0074FF", weight: 5 }).addTo(routeLayer);
+  } catch(e) {
+    console.error("Erreur itinéraire :", e);
+    alert("Impossible de récupérer l’itinéraire.");
+  }
 }
 
 /* ---------- BOUTONS FLOTTANTS ---------- */
