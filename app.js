@@ -17,10 +17,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const LIVREUR_INDEX = urlParams.get("livreur") || "1";            // ex: ?livreur=2
 const LIVREUR_ID = "livreur_" + LIVREUR_INDEX;
 
-/* ========== (optionnel) LISTE D'EMAILS POUR AUTH (si utilisée) ==========
-   => Si tu n'utilises pas l'auth email/pwd, tu peux laisser tel quel ou
-   remplacer par ton mécanisme préféré.
-*/
+/* ========== LISTE D'EMAILS + MOTS DE PASSE ========== */
 const livreurEmails = {
   1: "livreur1@hanafi.dz",
   2: "livreur2@hanafi.dz",
@@ -29,8 +26,17 @@ const livreurEmails = {
   5: "livreur5@hanafi.dz",
   6: "livreur6@hanafi.dz"
 };
-// mot de passe commun (si tu utilises email+pwd)
-const livreurPassword = "hanafi2025";
+
+// ✅ Mots de passe spécifiques à chaque livreur
+const livreurPasswords = {
+  1: "leMotDePasseDuLivreur1",
+  2: "leMotDePasseDuLivreur2",
+  3: "leMotDePasseDuLivreur3",
+  4: "leMotDePasseDuLivreur4",
+  5: "leMotDePasseDuLivreur5",
+  6: "leMotDePasseDuLivreur6"
+};
+const livreurPassword = livreurPasswords[LIVREUR_INDEX];
 
 /* ========== INIT CARTE ========== */
 const map = L.map("map", { center: defaultCenter, zoom: defaultZoom });
@@ -48,7 +54,6 @@ const labelsLayer = L.tileLayer(
   "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
   { subdomains: ["a","b","c","d"], maxZoom: 20, attribution: "© CartoDB / OSM", opacity: 1.0 }
 );
-// simulate "bold" labels by boosting contrast when tiles load
 labelsLayer.on("tileload", (e) => { try { e.tile.style.filter = "contrast(180%) brightness(80%)"; } catch(_){} });
 
 /* ========== ICONES ========== */
@@ -56,12 +61,6 @@ const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", ic
 const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [50,50], iconAnchor:[25,50]});
 
 /* ========== SAFE FIREBASE INIT ========== */
-/*
- - On n'initialise firebase ici que si window.firebaseConfig est présent
-   et qu'aucune app n'est déjà initialisée (évite double-declare).
- - window.db sera créé si possible -- sinon db restera undefined et le
-   code se désactivera proprement.
-*/
 if (typeof firebase !== "undefined") {
   try {
     if (!firebase.apps || firebase.apps.length === 0) {
@@ -86,25 +85,21 @@ const db = window.db || null;
 const authAvailable = typeof firebase !== "undefined" && typeof firebase.auth === "function";
 if (authAvailable) {
   const email = livreurEmails[LIVREUR_INDEX];
-  if (email) {
-    // essaie de se connecter automatiquement — si ça échoue on continue quand même (carches doivent gérer règles DB)
+  if (email && livreurPassword) {
     firebase.auth().signInWithEmailAndPassword(email, livreurPassword)
       .then(u => {
         console.log("✅ Connecté :", u.user.email);
-        // start app features that require auth (we still use DB via window.db)
         startApp();
       })
       .catch(err => {
         console.warn("Auth failed:", err.message);
-        // on continue quand même (peut-être que rules permettent la lecture)
         startApp();
       });
   } else {
-    console.warn("Aucun email livreur pour index", LIVREUR_INDEX);
+    console.warn("Aucun email ou mot de passe pour livreur index", LIVREUR_INDEX);
     startApp();
   }
 } else {
-  // pas d'auth dispo : on démarre quand même (lecture DB peut échouer si règles strictes)
   startApp();
 }
 
@@ -120,12 +115,9 @@ const clientMarkers = [];
 const $id = id => document.getElementById(id);
 function escapeHtml(s){ return (s||"").toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-/* ========== START AFTER (optional) AUTH ==========
-   We wrap startup in startApp() so we can call it after auth attempt
-*/
+/* ========== START AFTER (optional) AUTH ========== */
 function startApp(){
   createBottomButtons();
-  // start geolocation watcher
   if ('geolocation' in navigator) {
     navigator.geolocation.watchPosition(pos => {
       const { latitude:lat, longitude:lng } = pos.coords;
@@ -133,12 +125,9 @@ function startApp(){
         userMarker = L.marker([lat,lng], { icon: livreurIcon }).addTo(map);
         map.setView([lat,lng], 15);
       } else userMarker.setLatLng([lat,lng]);
-      // push position to Firebase if available
       try { if (db) db.ref(`livreurs/${LIVREUR_ID}`).set({ lat, lng, updatedAt: Date.now() }); } catch(e){ console.warn("Firebase write err",e); }
     }, e => console.warn("geo err", e), { enableHighAccuracy:true, maximumAge:2000, timeout:10000 });
   }
-
-  // start listening clients for this livreur
   listenClients();
 }
 
@@ -162,7 +151,7 @@ function renommerClient(id, oldName){
 
 /* ========== POPUP HTML ========== */
 function popupClientHtml(c){
-  const commandeUrl = "https://ton-lien-de-commande.com"; // remplace par ton lien réel plus tard
+  const commandeUrl = "https://ton-lien-de-commande.com";
   return `
     <div style="font-size:13px; max-width:260px;">
       <b>${escapeHtml(c.name || c.nom || "Client")}</b><br>
@@ -203,7 +192,7 @@ function listenClients(){
   });
 }
 
-/* ========== RECHERCHE CLIENTS UI ========== */
+/* ========== RECHERCHE CLIENTS ========== */
 (function initSearch(){
   const input = $id('searchInput');
   if(!input) return;
@@ -248,10 +237,7 @@ function listenClients(){
   });
 })();
 
-/* ========== ITINERAIRE (GRAPHOPPER) avec distance+durée ==========
-   Si tu préfères utiliser Leaflet Routing Machine, tu peux remplacer
-   par un contrôle L.Routing.control — ici on utilise directement GraphHopper
-*/
+/* ========== ITINÉRAIRE (GRAPHOPPER) ========== */
 async function calculerItineraire(destLat, destLng){
   if(!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
@@ -268,8 +254,6 @@ async function calculerItineraire(destLat, destLng){
     routeLayer.clearLayers();
     routePolyline = L.polyline(pts, { color:"#0074FF", weight:5, opacity:0.95 }).addTo(routeLayer);
     map.fitBounds(routePolyline.getBounds(), { padding:[60,60], maxZoom:17 });
-
-    // popup distance/durée
     const center = routePolyline.getBounds().getCenter();
     L.popup().setLatLng(center).setContent(`<b>Distance :</b> ${distanceKm} km<br><b>Durée :</b> ${dureeMin} min`).openOn(map);
   }catch(e){
@@ -279,7 +263,7 @@ async function calculerItineraire(destLat, destLng){
 }
 function clearItinerary(){ routeLayer.clearLayers(); routePolyline = null; }
 
-/* ========== BOUTONS FLOTTANTS (satellite / position) ========== */
+/* ========== BOUTONS FLOTTANTS ========== */
 function createBottomButtons(){
   const container = document.createElement('div');
   container.style.position='absolute';
@@ -328,7 +312,3 @@ function createBottomButtons(){
 
 /* ========== CONTEXT MENU (clic droit = ajouter client) ========== */
 map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
-
-/* ========== START LISTENERS (si auth a appelé startApp(), listenClients s'est lancé)
-   Si auth était absent, startApp() avait été appelé plus haut.
-*/
