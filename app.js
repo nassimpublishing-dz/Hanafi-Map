@@ -3,7 +3,7 @@
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
-const defaultZoom = 14;
+const defaultZoom = 17;
 const GRAPHHOPPER_KEY = "2d4407fe-6ae8-4008-a2c7-c1ec034c8f10";
 
 /* ---------- PARAMS ---------- */
@@ -227,3 +227,4 @@ function createBottomButtons() {
 
 /* ---------- LANCEMENT ---------- */
 autoLogin();
+
