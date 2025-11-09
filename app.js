@@ -1,9 +1,5 @@
 /* ===========================================================
-   app.js — VERSION FINALE (Firebase v8)
-   - Auth complète (livreurs + admin)
-   - Géolocalisation corrigée
-   - CRUD clients
-   - Outils admin
+   app.js — Version finale STABLE (Firebase v8)
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
@@ -18,102 +14,114 @@ const auth = firebase.auth();
 const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
 const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [48,48], iconAnchor:[24,48] });
 
-/* ---------- MAP ---------- */
-const map = L.map("map").setView(defaultCenter, defaultZoom);
-const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+/* ---------- MAP (créée une seule fois) ---------- */
+let map;
+function initMap() {
+  if (map) return map; // évite “container reused”
+  map = L.map("map").setView(defaultCenter, defaultZoom);
+  normalTiles.addTo(map);
+  routeLayer.addTo(map);
+  clientsLayer.addTo(map);
+  return map;
+}
+
+const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
 const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
   subdomains: ["mt0","mt1","mt2","mt3"], maxZoom: 20
 });
 let satelliteMode = false;
 
-/* ---------- VARIABLES GLOBALES ---------- */
+/* ---------- LAYERS ---------- */
+let routeLayer = L.layerGroup();
+let clientsLayer = L.layerGroup();
+
+/* ---------- ETAT GLOBAL ---------- */
 let userMarker = null;
-let routeLayer = L.layerGroup().addTo(map);
-let clientsLayer = L.layerGroup().addTo(map);
-let isAdmin = false;
-let CURRENT_UID = null;
 let geoWatchId = null;
 let clientsRef = null;
+let isAdmin = false;
+let CURRENT_UID = null;
 
 /* ===========================================================
-   🔐 AUTHENTIFICATION
+   🔐 AUTH
    =========================================================== */
 document.getElementById("loginBtn").addEventListener("click", () => {
   const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
-  const errBox = document.getElementById("loginError");
   if (!email || !password) {
-    errBox.textContent = "Veuillez remplir tous les champs";
+    document.getElementById("loginError").textContent = "Veuillez remplir tous les champs";
     return;
   }
-  errBox.textContent = "";
   auth.signInWithEmailAndPassword(email, password)
-    .then(() => console.log("Connexion réussie"))
-    .catch(err => { errBox.textContent = "Erreur : " + err.message; });
+    .then(() => console.log("✅ Connexion réussie"))
+    .catch(err => { document.getElementById("loginError").textContent = err.message; });
 });
 
 document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
 
-/* ---------- Gestion état login/logout ---------- */
 auth.onAuthStateChanged(async (user) => {
   if (user) {
     CURRENT_UID = user.uid;
+    console.log("✅ Connecté :", user.email);
     document.getElementById("loginContainer").style.display = "none";
     document.getElementById("map").style.display = "block";
     document.getElementById("logoutBtn").style.display = "block";
     document.getElementById("controls").style.display = "flex";
 
-    // Correction d'affichage Leaflet
-    setTimeout(() => { try { map.invalidateSize(); } catch(_){} }, 200);
+    setTimeout(() => { try { initMap().invalidateSize(); } catch(e){} }, 300);
 
-    // Vérifie si ADMIN
+    // Vérifie admin
     try {
       const snap = await db.ref("admins/" + CURRENT_UID).once("value");
       isAdmin = snap.exists() && snap.val() === true;
       if (isAdmin) console.log("👑 Mode ADMIN activé");
     } catch(e) {
-      console.warn("Erreur admin:", e);
+      console.warn("Erreur récupération admin :", e);
       isAdmin = false;
     }
 
     startApp();
   } else {
-    cleanupApp();
+    console.log("❌ Déconnecté");
+    CURRENT_UID = null;
+    isAdmin = false;
+    cleanup();
   }
 });
 
 /* ===========================================================
-   🚀 APP PRINCIPALE
+   🚀 APP
    =========================================================== */
 function startApp() {
+  initMap();
   createBottomButtons();
   watchPosition();
   listenClients();
   if (isAdmin) enableAdminTools();
 }
 
-function cleanupApp() {
-  CURRENT_UID = null;
-  isAdmin = false;
+/* ---------- CLEANUP après logout ---------- */
+function cleanup() {
   document.getElementById("loginContainer").style.display = "block";
   document.getElementById("map").style.display = "none";
   document.getElementById("logoutBtn").style.display = "none";
   document.getElementById("controls").style.display = "none";
+
   if (geoWatchId !== null) {
     try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
     geoWatchId = null;
   }
   if (clientsRef) {
-    try { clientsRef.off(); } catch(_) {}
+    clientsRef.off();
     clientsRef = null;
   }
-  routeLayer.clearLayers();
-  clientsLayer.clearLayers();
+  if (routeLayer) routeLayer.clearLayers();
+  if (clientsLayer) clientsLayer.clearLayers();
   if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
 }
 
 /* ===========================================================
-   📍 GÉOLOCALISATION
+   📍 GEOLOCALISATION
    =========================================================== */
 function watchPosition() {
   if (!("geolocation" in navigator)) {
@@ -122,7 +130,12 @@ function watchPosition() {
     return;
   }
 
-  // Première localisation rapide
+  // Efface ancien watcher
+  if (geoWatchId !== null) {
+    try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
+  }
+
+  // Première position rapide
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
@@ -137,17 +150,17 @@ function watchPosition() {
   );
 
   // Watch continu
-  if (geoWatchId) {
-    try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
-  }
-
   geoWatchId = navigator.geolocation.watchPosition(
     (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
-      if (!userMarker)
+      if (!userMarker) {
         userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
-      else userMarker.setLatLng([lat, lng]);
+        map.setView([lat, lng], 15);
+      } else {
+        userMarker.setLatLng([lat, lng]);
+      }
 
+      // ✅ Attend que CURRENT_UID soit défini
       if (CURRENT_UID) {
         db.ref("livreurs/" + CURRENT_UID)
           .set({ lat, lng, updatedAt: Date.now() })
@@ -160,7 +173,7 @@ function watchPosition() {
     },
     {
       enableHighAccuracy: false,
-      maximumAge: 5000,
+      maximumAge: 8000,
       timeout: 30000
     }
   );
@@ -171,18 +184,18 @@ function watchPosition() {
    =========================================================== */
 function listenClients() {
   if (!db || !CURRENT_UID) return;
-  if (clientsRef) try { clientsRef.off(); } catch(_) {}
+  if (clientsRef) clientsRef.off();
+
   const path = isAdmin ? "clients" : `clients/${CURRENT_UID}`;
   clientsRef = db.ref(path);
   clientsRef.on("value", (snap) => {
     clientsLayer.clearLayers();
     const data = snap.val();
     if (!data) return;
-
     if (isAdmin) {
-      Object.entries(data).forEach(([uid, clients]) => {
+      Object.entries(data).forEach(([livreurUid, clients]) => {
         if (!clients) return;
-        Object.entries(clients).forEach(([id, c]) => addClientMarker(uid, id, c));
+        Object.entries(clients).forEach(([id, c]) => addClientMarker(livreurUid, id, c));
       });
     } else {
       Object.entries(data).forEach(([id, c]) => addClientMarker(CURRENT_UID, id, c));
@@ -196,11 +209,13 @@ function addClientMarker(livreurUid, id, c) {
   marker.bindPopup(popupClientHtml(livreurUid, id, c));
 }
 
+/* ---------- POPUP CLIENT ---------- */
 function popupClientHtml(livreurUid, id, c) {
   const nom = c.name || "Client";
   const safeNom = encodeURIComponent(nom);
-  const safeUid = encodeURIComponent(livreurUid);
+  const safeLivreur = encodeURIComponent(livreurUid);
   const safeId = encodeURIComponent(id);
+
   return `
     <div style="font-size:13px;max-width:220px">
       <b>${nom}</b><br>
@@ -208,40 +223,21 @@ function popupClientHtml(livreurUid, id, c) {
         <button onclick="calculerItineraire(${c.lat},${c.lng})"
           style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:5px;">🚗 Itinéraire</button>
         ${isAdmin ? `
-        <button onclick="renommerClient('${safeUid}','${safeId}','${safeNom}')"
+        <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
           style="background:#009688;color:#fff;border:none;padding:6px;border-radius:5px;">✏️ Modifier</button>
-        <button onclick="supprimerClient('${safeUid}','${safeId}')"
+        <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
           style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:5px;">🗑️ Supprimer</button>` : ""}
       </div>
     </div>`;
 }
 
-/* ===========================================================
-   🛠️ OUTILS ADMIN
-   =========================================================== */
-function enableAdminTools() {
-  console.log("✅ Outils admin activés : clic droit pour ajouter un client.");
-  map.on("contextmenu", (e) => {
-    const livreurUid = prompt("UID du livreur pour ce client :\n(laisse vide pour toi-même)");
-    const cible = livreurUid || CURRENT_UID;
-    ajouterClient(cible, e.latlng.lat, e.latlng.lng);
-  });
-}
-
+/* ---------- GESTION CLIENTS ---------- */
 function ajouterClient(livreurUid, lat, lng) {
   const nom = prompt("Nom du client :");
   if (!nom) return;
-  db.ref(`clients/${livreurUid}`).push({
-    name: nom,
-    lat,
-    lng,
-    createdAt: Date.now()
-  }).then(() => {
-    alert("✅ Client ajouté avec succès !");
-  }).catch(err => {
-    console.error("Erreur ajout client :", err);
-    alert("❌ Impossible d’ajouter le client (permissions ou connexion).");
-  });
+  db.ref(`clients/${livreurUid}`).push({ name: nom, lat, lng, createdAt: Date.now() })
+    .then(() => alert("✅ Client ajouté avec succès !"))
+    .catch(err => alert("❌ Erreur ajout client : " + err.message));
 }
 
 function renommerClient(livreurUid, id, oldName) {
@@ -255,9 +251,17 @@ function supprimerClient(livreurUid, id) {
   db.ref(`clients/${livreurUid}/${id}`).remove();
 }
 
-/* ===========================================================
-   🚗 ITINÉRAIRE
-   =========================================================== */
+/* ---------- OUTILS ADMIN ---------- */
+function enableAdminTools() {
+  console.log("✅ Outils admin activés : clic droit pour ajouter un client.");
+  map.on("contextmenu", (e) => {
+    const livreurUid = prompt("UID du livreur pour ce client :\n(laisse vide pour toi-même)");
+    const cible = livreurUid || CURRENT_UID;
+    ajouterClient(cible, e.latlng.lat, e.latlng.lng);
+  });
+}
+
+/* ---------- ITINÉRAIRE ---------- */
 async function calculerItineraire(destLat, destLng) {
   if (!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
@@ -276,17 +280,12 @@ async function calculerItineraire(destLat, destLng) {
   }
 }
 
-/* ===========================================================
-   🛰️ BOUTONS FLOTTANTS
-   =========================================================== */
+/* ---------- BOUTONS FLOTTANTS ---------- */
 function createBottomButtons() {
   if (document.getElementById("mapButtons")) return;
   const c = document.createElement("div");
   c.id = "mapButtons";
-  Object.assign(c.style, {
-    position: "absolute", bottom: "20px", right: "20px",
-    display: "flex", flexDirection: "column", gap: "10px", zIndex: "2000"
-  });
+  c.style = "position:absolute;bottom:20px;right:20px;display:flex;flex-direction:column;gap:10px;z-index:2000";
 
   const btn = (txt) => {
     const b = document.createElement("button");
