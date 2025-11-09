@@ -1,5 +1,5 @@
 /* ===========================================================
-   app.js — Version stable avec AUTH, ADMIN, clients et règles Firebase
+   app.js — Version finale (Firebase v8) avec GEOLOC corrigée
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
@@ -14,7 +14,7 @@ const auth = firebase.auth();
 const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
 const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [48,48], iconAnchor:[24,48] });
 
-/* ---------- MAP ---------- */
+/* ---------- MAP (initialisée dès le chargement) ---------- */
 const map = L.map("map").setView(defaultCenter, defaultZoom);
 const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
@@ -22,11 +22,16 @@ const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}
 });
 let satelliteMode = false;
 
+/* ---------- LAYERS & ETAT ---------- */
 let userMarker = null;
 let routeLayer = L.layerGroup().addTo(map);
 let clientsLayer = L.layerGroup().addTo(map);
 let isAdmin = false;
 let CURRENT_UID = null;
+
+/* ---------- Helpers pour éviter doublons ---------- */
+let geoWatchId = null;
+let clientsRef = null;
 
 /* ===========================================================
    🔐 AUTH — Gestion du login/logout
@@ -34,20 +39,19 @@ let CURRENT_UID = null;
 document.getElementById("loginBtn").addEventListener("click", () => {
   const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
-  if (!email || !password) return document.getElementById("loginError").textContent = "Veuillez remplir tous les champs";
-
+  if (!email || !password) {
+    document.getElementById("loginError").textContent = "Veuillez remplir tous les champs";
+    return;
+  }
+  document.getElementById("loginError").textContent = "";
   auth.signInWithEmailAndPassword(email, password)
-    .then(() => {
-      document.getElementById("loginError").textContent = "";
-    })
-    .catch(err => {
-      document.getElementById("loginError").textContent = err.message;
-    });
+    .then(() => { /* Connexion réussie */ })
+    .catch(err => { document.getElementById("loginError").textContent = err.message; });
 });
 
 document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
 
-/* ---------- Affichage map après login ---------- */
+/* ---------- Affichage map après login (gère invalidateSize) ---------- */
 auth.onAuthStateChanged(async (user) => {
   if (user) {
     CURRENT_UID = user.uid;
@@ -56,22 +60,41 @@ auth.onAuthStateChanged(async (user) => {
     document.getElementById("logoutBtn").style.display = "block";
     document.getElementById("controls").style.display = "flex";
 
+    // invalidateSize pour corriger rendu Leaflet si #map était caché
+    setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 200);
+
+    // Vérifie admin (Firebase v8 -> once('value'))
     try {
-      const adminSnap = await db.ref("admins/" + CURRENT_UID).get();
-      isAdmin = adminSnap.exists();
+      const snap = await db.ref("admins/" + CURRENT_UID).once("value");
+      isAdmin = snap.exists() && snap.val() === true;
       if (isAdmin) console.log("👑 Mode ADMIN activé");
     } catch(e) {
       console.warn("Erreur récupération admin :", e);
+      isAdmin = false;
     }
 
     startApp();
   } else {
+    // cleanup
     CURRENT_UID = null;
     isAdmin = false;
     document.getElementById("loginContainer").style.display = "block";
     document.getElementById("map").style.display = "none";
     document.getElementById("logoutBtn").style.display = "none";
     document.getElementById("controls").style.display = "none";
+
+    // clear watchers & listeners
+    if (geoWatchId !== null) {
+      try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
+      geoWatchId = null;
+    }
+    if (clientsRef) {
+      clientsRef.off();
+      clientsRef = null;
+    }
+    routeLayer.clearLayers();
+    clientsLayer.clearLayers();
+    if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
   }
 });
 
@@ -85,7 +108,7 @@ function startApp() {
   if (isAdmin) enableAdminTools();
 }
 
-/* ---------- GEOLOCALISATION ---------- */
+/* ---------- GEOLOCALISATION CORRIGÉE ---------- */
 function watchPosition() {
   if (!("geolocation" in navigator)) {
     console.warn("Géolocalisation non supportée");
@@ -93,26 +116,31 @@ function watchPosition() {
     return;
   }
 
-  // 1️⃣ Première position rapide
+  // Première position rapide (fallback si le watch met du temps)
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
-      if (!userMarker) {
-        userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
-      }
+      if (!userMarker) userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
       map.setView([lat, lng], 15);
     },
     (err) => {
       console.warn("Erreur géoloc initiale :", err);
       map.setView(defaultCenter, defaultZoom);
     },
-    { enableHighAccuracy: false, timeout: 10000, maximumAge: 5000 }
+    { enableHighAccuracy: false, timeout: 15000, maximumAge: 5000 }
   );
 
-  // 2️⃣ Watch position en temps réel
-  navigator.geolocation.watchPosition(
+  // Supprime ancien watcher si existant
+  if (geoWatchId !== null) {
+    try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
+    geoWatchId = null;
+  }
+
+  // Watch en continu (stocke l'id pour pouvoir clear)
+  geoWatchId = navigator.geolocation.watchPosition(
     (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
+
       if (!userMarker) {
         userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
         map.setView([lat, lng], 15);
@@ -120,6 +148,7 @@ function watchPosition() {
         userMarker.setLatLng([lat, lng]);
       }
 
+      // Sauvegarde Firebase
       if (CURRENT_UID) {
         db.ref("livreurs/" + CURRENT_UID)
           .set({ lat, lng, updatedAt: Date.now() })
@@ -128,9 +157,14 @@ function watchPosition() {
     },
     (err) => {
       console.warn("Erreur géoloc watch :", err);
-      // Timeout non bloquant
+      // Timeout ou erreur -> map reste centrée sur la dernière position connue
+      if (!userMarker) map.setView(defaultCenter, defaultZoom);
     },
-    { enableHighAccuracy: false, maximumAge: 5000, timeout: 20000 }
+    {
+      enableHighAccuracy: false, // désactivé pour éviter timeout fréquents
+      maximumAge: 5000,
+      timeout: 30000
+    }
   );
 }
 
@@ -138,14 +172,22 @@ function watchPosition() {
 function listenClients() {
   if (!db || !CURRENT_UID) return;
 
+  // retire l'ancien listener si existant
+  if (clientsRef) {
+    try { clientsRef.off(); } catch(_) {}
+    clientsRef = null;
+  }
+
   const path = isAdmin ? "clients" : `clients/${CURRENT_UID}`;
-  db.ref(path).on("value", (snap) => {
+  clientsRef = db.ref(path);
+  clientsRef.on("value", (snap) => {
     clientsLayer.clearLayers();
     const data = snap.val();
     if (!data) return;
 
     if (isAdmin) {
       Object.entries(data).forEach(([livreurUid, clients]) => {
+        if (!clients) return;
         Object.entries(clients).forEach(([id, c]) => addClientMarker(livreurUid, id, c));
       });
     } else {
@@ -214,7 +256,6 @@ async function calculerItineraire(destLat, destLng) {
   if (!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
   const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
-  
   try {
     const res = await fetch(url);
     const data = await res.json();
@@ -229,9 +270,11 @@ async function calculerItineraire(destLat, destLng) {
   }
 }
 
-/* ---------- BOUTONS FLOTTANTS ---------- */
+/* ---------- BOUTONS FLOTTANTS (évite duplication) ---------- */
 function createBottomButtons() {
+  if (document.getElementById("mapButtons")) return; // déjà créé
   const c = document.createElement("div");
+  c.id = "mapButtons";
   c.style.position = "absolute";
   c.style.bottom = "20px";
   c.style.right = "20px";
