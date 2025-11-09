@@ -29,12 +29,12 @@ const livreurEmails = {
 
 // ✅ Mots de passe spécifiques à chaque livreur
 const livreurPasswords = {
-  1: "leMotDePasseDuLivreur1",
-  2: "leMotDePasseDuLivreur2",
-  3: "leMotDePasseDuLivreur3",
-  4: "leMotDePasseDuLivreur4",
-  5: "leMotDePasseDuLivreur5",
-  6: "leMotDePasseDuLivreur6"
+  1: "hanafi001",
+  2: "hanafi002",
+  3: "hanafi003",
+  4: "hanafi004",
+  5: "hanafi005",
+  6: "hanafi006"
 };
 const livreurPassword = livreurPasswords[LIVREUR_INDEX];
 
@@ -312,3 +312,4 @@ function createBottomButtons(){
 
 /* ========== CONTEXT MENU (clic droit = ajouter client) ========== */
 map.on('contextmenu', e => ajouterClient(e.latlng.lat, e.latlng.lng));
+
