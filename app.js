@@ -41,7 +41,7 @@ let isAdmin = false;
 let CURRENT_UID = null;
 
 /* ===========================================================
-   🔐 AUTH
+   🔐 AUTHENTIFICATION
    =========================================================== */
 document.getElementById("loginBtn").addEventListener("click", () => {
   const email = document.getElementById("email").value.trim();
@@ -87,7 +87,7 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 /* ===========================================================
-   🚀 APP
+   🚀 INITIALISATION APP
    =========================================================== */
 function startApp() {
   initMap();
@@ -191,7 +191,9 @@ function addClientMarker(livreurUid, id, c) {
   marker.bindPopup(popupClientHtml(livreurUid, id, c));
 }
 
-/* ---------- POPUP CLIENT ---------- */
+/* ===========================================================
+   🧾 POPUP CLIENT COMPLET
+   =========================================================== */
 function popupClientHtml(livreurUid, id, c) {
   const nom = c.name || "Client";
   const safeNom = encodeURIComponent(nom);
@@ -199,32 +201,77 @@ function popupClientHtml(livreurUid, id, c) {
   const safeId = encodeURIComponent(id);
 
   const canEdit = isAdmin || livreurUid === CURRENT_UID;
+
   return `
-    <div style="font-size:13px;max-width:220px">
-      <b>${nom}</b><br>
-      <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
+    <div style="font-size:13px;max-width:230px;display:flex;flex-direction:column;gap:6px;">
+      <b>${nom}</b>
+      <div style="margin-top:4px;display:flex;flex-direction:column;gap:5px;">
         <button onclick="calculerItineraire(${c.lat},${c.lng})"
-          style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:5px;">🚗 Itinéraire</button>
+          style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+          🚗 Itinéraire
+        </button>
+
+        <button onclick="supprimerItineraire()"
+          style="background:#555;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+          ❌ Supprimer itinéraire
+        </button>
+
+        <button onclick="commanderClient('${safeLivreur}','${safeId}','${safeNom}')"
+          style="background:#FF9800;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+          🧾 Commander
+        </button>
+
         ${canEdit ? `
-        <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
-          style="background:#009688;color:#fff;border:none;padding:6px;border-radius:5px;">✏️ Modifier</button>
-        <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
-          style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:5px;">🗑️ Supprimer</button>` : ""}
+          <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
+            style="background:#009688;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+            ✏️ Modifier nom
+          </button>
+
+          <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
+            style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+            🗑️ Supprimer client
+          </button>
+        ` : ""}
       </div>
-    </div>`;
+    </div>
+  `;
 }
 
-/* ---------- AJOUT CLIENT (tous utilisateurs) ---------- */
+/* ---------- SUPPRIMER L’ITINÉRAIRE ---------- */
+function supprimerItineraire() {
+  if (routeLayer) {
+    routeLayer.clearLayers();
+    alert("🗑️ Itinéraire supprimé.");
+  }
+}
+
+/* ---------- COMMANDER CLIENT ---------- */
+function commanderClient(livreurUid, clientId, nomClient) {
+  const produit = prompt("Quel produit souhaite commander " + decodeURIComponent(nomClient) + " ?");
+  if (!produit) return;
+
+  const commande = {
+    produit: produit.trim(),
+    date: new Date().toISOString(),
+    status: "en attente",
+    par: CURRENT_UID
+  };
+
+  db.ref(`commandes/${livreurUid}/${clientId}`).push(commande)
+    .then(() => alert("✅ Commande enregistrée avec succès !"))
+    .catch(err => alert("❌ Erreur lors de la commande : " + err.message));
+}
+
+/* ===========================================================
+   🧍 CRUD CLIENTS + ADMIN
+   =========================================================== */
 function enableAddClient() {
-  console.log("📌 Clic droit pour ajouter un client (vous-même).");
   map.on("contextmenu", (e) => {
     ajouterClient(CURRENT_UID, e.latlng.lat, e.latlng.lng);
   });
 }
 
-/* ---------- OUTILS ADMIN ---------- */
 function enableAdminTools() {
-  console.log("👑 Outils admin actifs : clic droit + UID pour un autre livreur.");
   map.on("contextmenu", async (e) => {
     const livreurUid = prompt("UID du livreur pour ce client (vide = vous-même)");
     const cible = livreurUid || CURRENT_UID;
@@ -232,7 +279,6 @@ function enableAdminTools() {
   });
 }
 
-/* ---------- CRUD CLIENT ---------- */
 function ajouterClient(livreurUid, lat, lng) {
   const nom = prompt("Nom du client :");
   if (!nom) return;
@@ -252,7 +298,9 @@ function supprimerClient(livreurUid, id) {
   db.ref(`clients/${livreurUid}/${id}`).remove();
 }
 
-/* ---------- ITINÉRAIRE ---------- */
+/* ===========================================================
+   🚗 ITINÉRAIRE
+   =========================================================== */
 async function calculerItineraire(destLat, destLng) {
   if (!userMarker) return alert("Localisation en attente...");
   const me = userMarker.getLatLng();
@@ -271,7 +319,9 @@ async function calculerItineraire(destLat, destLng) {
   }
 }
 
-/* ---------- BOUTONS FLOTTANTS ---------- */
+/* ===========================================================
+   🧭 BOUTONS FLOTTANTS
+   =========================================================== */
 function createBottomButtons() {
   if (document.getElementById("mapButtons")) return;
   const c = document.createElement("div");
