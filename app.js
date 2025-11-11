@@ -1,5 +1,5 @@
 /* ===========================================================
-   app.js — Version ADMIN + LIVREURS (Firebase v8)
+   app.js — Version ADMIN + LIVREURS (Firebase v8) Optimisée
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
@@ -23,40 +23,36 @@ const livreurIcon = L.icon({
 });
 
 /* ---------- MAP ---------- */
-let map;
-let routeLayer = L.layerGroup();
-let clientsLayer = L.layerGroup();
+let map, routeLayer = L.layerGroup(), clientsLayer = L.layerGroup();
+let userMarker = null, geoWatchId = null, clientsRef = null;
+let isAdmin = false, CURRENT_UID = null;
+let routeControl = null;
+let markers = [];
 
-let userMarker = null;
-let geoWatchId = null;
-let clientsRef = null;
-let isAdmin = false;
-let CURRENT_UID = null;
+/* ---------- TILES ---------- */
+const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
+const satelliteTiles = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
+  subdomains: ["mt0","mt1","mt2","mt3"], maxZoom: 20
+});
+let satelliteMode = false;
 
+/* ---------- INIT MAP ---------- */
 function initMap() {
-  if (map) return map;
-  map = L.map("map").setView(defaultCenter, defaultZoom);
-  normalTiles.addTo(map);
-  routeLayer.addTo(map);
-  clientsLayer.addTo(map);
+  if (!map) {
+    map = L.map("map").setView(defaultCenter, defaultZoom);
+    normalTiles.addTo(map);
+    routeLayer.addTo(map);
+    clientsLayer.addTo(map);
 
-  // ✅ zone d’infos itinéraire
-  const infoDiv = document.createElement("div");
-  infoDiv.id = "itineraireInfo";
-  infoDiv.style.cssText =
-    "position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:8px;font-size:13px;box-shadow:0 0 6px rgba(0,0,0,0.2);z-index:1500;";
-  infoDiv.textContent = "🚗 Aucune route tracée";
-  document.body.appendChild(infoDiv);
-
+    const infoDiv = document.createElement("div");
+    infoDiv.id = "itineraireInfo";
+    infoDiv.style.cssText =
+      "position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:8px;font-size:13px;box-shadow:0 0 6px rgba(0,0,0,0.2);z-index:1500;";
+    infoDiv.textContent = "🚗 Aucune route tracée";
+    document.body.appendChild(infoDiv);
+  }
   return map;
 }
-
-const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
-const satelliteTiles = L.tileLayer(
-  "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-  { subdomains: ["mt0", "mt1", "mt2", "mt3"], maxZoom: 20 }
-);
-let satelliteMode = false;
 
 /* ===========================================================
    🔐 AUTHENTIFICATION
@@ -69,10 +65,7 @@ document.getElementById("loginBtn").addEventListener("click", () => {
     return;
   }
   auth.signInWithEmailAndPassword(email, password)
-    .then(() => console.log("✅ Connexion réussie"))
-    .catch(err => {
-      document.getElementById("loginError").textContent = err.message;
-    });
+      .catch(err => document.getElementById("loginError").textContent = err.message);
 });
 
 document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -80,38 +73,25 @@ document.getElementById("logoutBtn").addEventListener("click", () => auth.signOu
 auth.onAuthStateChanged(async user => {
   if (user) {
     CURRENT_UID = user.uid;
-    console.log("✅ Connecté :", user.email);
+    try {
+      const snap = await db.ref("admins/" + CURRENT_UID).once("value");
+      isAdmin = snap.exists() && snap.val() === true;
+    } catch { isAdmin = false; }
+
     document.getElementById("loginContainer").style.display = "none";
     document.getElementById("map").style.display = "block";
     document.getElementById("logoutBtn").style.display = "block";
     document.getElementById("controls").style.display = "flex";
 
-    setTimeout(() => {
-      try {
-        initMap().invalidateSize();
-      } catch (e) {}
-    }, 300);
-
-    try {
-      const snap = await db.ref("admins/" + CURRENT_UID).once("value");
-      isAdmin = snap.exists() && snap.val() === true;
-      if (isAdmin) console.log("👑 Mode ADMIN activé");
-    } catch (e) {
-      console.warn("Erreur récupération admin :", e);
-      isAdmin = false;
-    }
-
+    setTimeout(() => initMap()?.invalidateSize(), 300);
     startApp();
   } else {
-    console.log("❌ Déconnecté");
-    CURRENT_UID = null;
-    isAdmin = false;
-    cleanup();
+    CURRENT_UID = null; isAdmin = false; cleanup();
   }
 });
 
 /* ===========================================================
-   🚀 INITIALISATION APP
+   🚀 START APP
    =========================================================== */
 function startApp() {
   initMap();
@@ -119,7 +99,6 @@ function startApp() {
   watchPosition();
   listenClients();
   enableSearchClients();
-  if (isAdmin) enableAdminTools?.();
 }
 
 /* ---------- CLEANUP ---------- */
@@ -129,312 +108,196 @@ function cleanup() {
   document.getElementById("logoutBtn").style.display = "none";
   document.getElementById("controls").style.display = "none";
 
-  if (geoWatchId !== null) {
-    try {
-      navigator.geolocation.clearWatch(geoWatchId);
-    } catch (_) {}
-    geoWatchId = null;
-  }
-  if (clientsRef) {
-    clientsRef.off();
-    clientsRef = null;
-  }
-  if (routeLayer) routeLayer.clearLayers();
-  if (clientsLayer) clientsLayer.clearLayers();
-  if (userMarker) {
-    map.removeLayer(userMarker);
-    userMarker = null;
-  }
+  if (geoWatchId !== null) { try { navigator.geolocation.clearWatch(geoWatchId); } catch{} geoWatchId = null; }
+  if (clientsRef) { clientsRef.off(); clientsRef = null; }
+  routeLayer.clearLayers();
+  clientsLayer.clearLayers();
+  markers = [];
+  if (userMarker && map) map.removeLayer(userMarker);
+  userMarker = null;
 
   const info = document.getElementById("itineraireInfo");
   if (info) info.textContent = "🚗 Aucune route tracée";
+  if (routeControl && map) { map.removeControl(routeControl); routeControl = null; }
 }
 
 /* ===========================================================
    📍 GEOLOCALISATION
    =========================================================== */
 function watchPosition() {
-  if (!("geolocation" in navigator)) {
-    console.warn("Géolocalisation non supportée");
-    map.setView(defaultCenter, defaultZoom);
-    return;
-  }
+  if (!navigator.geolocation) { map.setView(defaultCenter, defaultZoom); return; }
 
-  if (geoWatchId !== null) {
-    try {
-      navigator.geolocation.clearWatch(geoWatchId);
-    } catch (_) {}
-  }
+  geoWatchId = navigator.geolocation.watchPosition(pos => {
+    const { latitude: lat, longitude: lng } = pos.coords;
+    if (!userMarker && map) userMarker = L.marker([lat,lng], { icon: livreurIcon }).addTo(map);
+    else userMarker?.setLatLng([lat,lng]);
+    if (map) map.setView([lat,lng], 15);
 
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      const { latitude: lat, longitude: lng } = pos.coords;
-      if (!userMarker) userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
-      map.setView([lat, lng], 15);
-    },
-    err => {
-      console.warn("Erreur géoloc initiale :", err);
-      map.setView(defaultCenter, defaultZoom);
+    if (CURRENT_UID) {
+      db.ref("livreurs/" + CURRENT_UID).set({ lat,lng, updatedAt: Date.now() }).catch(()=>{});
     }
-  );
-
-  geoWatchId = navigator.geolocation.watchPosition(
-    pos => {
-      const { latitude: lat, longitude: lng } = pos.coords;
-      if (!userMarker) {
-        userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
-        map.setView([lat, lng], 15);
-      } else {
-        userMarker.setLatLng([lat, lng]);
-      }
-
-      if (CURRENT_UID) {
-        db.ref("livreurs/" + CURRENT_UID)
-          .set({ lat, lng, updatedAt: Date.now() })
-          .catch(e => console.warn("Firebase write err:", e));
-      }
-    },
-    err => console.warn("Erreur géoloc watch :", err),
-    { enableHighAccuracy: false, maximumAge: 8000, timeout: 30000 }
-  );
+  }, ()=>{}, { enableHighAccuracy:false, maximumAge:8000, timeout:30000 });
 }
 
 /* ===========================================================
    👥 CLIENTS
    =========================================================== */
-let markers = [];
-
 function listenClients() {
   if (!db || !CURRENT_UID) return;
   if (clientsRef) clientsRef.off();
-
   const path = isAdmin ? "clients" : `clients/${CURRENT_UID}`;
   clientsRef = db.ref(path);
+
   clientsRef.on("value", snap => {
     clientsLayer.clearLayers();
     markers = [];
-    const data = snap.val();
-    if (!data) return;
+    const data = snap.val(); if (!data) return;
+
     if (isAdmin) {
-      Object.entries(data).forEach(([uid, list]) => {
-        Object.entries(list || {}).forEach(([id, c]) => addClientMarker(uid, id, c));
-      });
+      Object.entries(data).forEach(([uid,list]) => Object.entries(list||{}).forEach(([id,c]) => addClientMarker(uid,id,c)));
     } else {
-      Object.entries(data).forEach(([id, c]) => addClientMarker(CURRENT_UID, id, c));
+      Object.entries(data).forEach(([id,c]) => addClientMarker(CURRENT_UID,id,c));
     }
   });
 }
 
 function addClientMarker(livreurUid, id, c) {
   if (!c || typeof c.lat !== "number" || typeof c.lng !== "number") return;
-  const marker = L.marker([c.lat, c.lng], { icon: clientIcon, nom: c.name || "Client" }).addTo(clientsLayer);
-  marker.bindPopup(popupClientHtml(livreurUid, id, c));
+  const marker = L.marker([c.lat, c.lng], { icon: clientIcon });
+  marker.nom = c.name || "Client";
+  marker.bindPopup(popupClientHtml(livreurUid,id,c));
+  marker.addTo(clientsLayer);
   markers.push(marker);
 }
 
 /* ===========================================================
-   🔹 POPUP CLIENT COMPLET
+   🔹 POPUP CLIENT
    =========================================================== */
-function popupClientHtml(livreurUid, id, c) {
-  const nom = c.name || "Client";
+function popupClientHtml(livreurUid,id,c) {
+  const nom = c.name||"Client";
+  const canEdit = isAdmin || livreurUid===CURRENT_UID;
   const safeNom = encodeURIComponent(nom);
-  const safeLivreur = encodeURIComponent(livreurUid);
   const safeId = encodeURIComponent(id);
-  const canEdit = isAdmin || livreurUid === CURRENT_UID;
+  const safeLivreur = encodeURIComponent(livreurUid);
 
   return `
-    <div style="font-size:13px;max-width:230px;display:flex;flex-direction:column;gap:6px;">
-      <b>${nom}</b>
-      <div style="margin-top:4px;display:flex;flex-direction:column;gap:5px;">
-        <button onclick="calculerItineraire(${c.lat},${c.lng})"
-          style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
-          🚗 Itinéraire
-        </button>
-
-        <button onclick="supprimerItineraire()"
-          style="background:#555;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
-          ❌ Supprimer itinéraire
-        </button>
-
-        <button onclick="commanderClient('${safeLivreur}','${safeId}','${safeNom}')"
-          style="background:#FF9800;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
-          🧾 Commander
-        </button>
-
-        ${canEdit ? `
-          <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
-            style="background:#009688;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
-            ✏️ Modifier nom
-          </button>
-
-          <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
-            style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
-            🗑️ Supprimer client
-          </button>
-        ` : ""}
-      </div>
+  <div style="font-size:13px;max-width:230px;display:flex;flex-direction:column;gap:6px;">
+    <b>${nom}</b>
+    <div style="margin-top:4px;display:flex;flex-direction:column;gap:5px;">
+      <button onclick="calculerItineraire(${c.lat},${c.lng})" style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">🚗 Itinéraire</button>
+      <button onclick="supprimerItineraire()" style="background:#555;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">❌ Supprimer itinéraire</button>
+      <button onclick="commanderClient('${safeLivreur}','${safeId}','${safeNom}')" style="background:#FF9800;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">🧾 Commander</button>
+      ${canEdit?`
+      <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')" style="background:#009688;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">✏️ Modifier nom</button>
+      <button onclick="supprimerClient('${safeLivreur}','${safeId}')" style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">🗑️ Supprimer client</button>`:""}
     </div>
-  `;
+  </div>`;
 }
 
 /* ===========================================================
-   🚗 ITINÉRAIRE (affiche durée + distance sous la carte)
+   🚗 ITINÉRAIRE
    =========================================================== */
-let routeControl = null;
-
-function calculerItineraire(lat, lng) {
+function calculerItineraire(lat,lng){
+  if (!map) return;
   if (routeControl) map.removeControl(routeControl);
 
   const info = document.getElementById("itineraireInfo");
   if (info) info.textContent = "⏳ Calcul de l'itinéraire...";
 
-  navigator.geolocation.getCurrentPosition(pos => {
-    const start = [pos.coords.latitude, pos.coords.longitude];
-    const end = [lat, lng];
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const start=[pos.coords.latitude,pos.coords.longitude];
+    const end=[lat,lng];
 
     routeControl = L.Routing.control({
-      waypoints: [L.latLng(start[0], start[1]), L.latLng(end[0], end[1])],
-      lineOptions: { styles: [{ color: '#0074FF', weight: 4 }] },
-      routeWhileDragging: false,
-      showAlternatives: false,
-      createMarker: () => null
-    })
-    .on('routesfound', e => {
-      const route = e.routes[0];
-      const distance = (route.summary.totalDistance / 1000).toFixed(2);
-      const duree = Math.round(route.summary.totalTime / 60);
-      if (info) info.textContent = `🚗 Distance : ${distance} km — ⏱️ Durée : ${duree} min`;
-    })
-    .addTo(map);
+      waypoints:[L.latLng(start[0],start[1]),L.latLng(end[0],end[1])],
+      lineOptions:{styles:[{color:'#0074FF',weight:4}]},
+      routeWhileDragging:false,
+      showAlternatives:false,
+      createMarker:()=>null
+    }).on('routesfound',e=>{
+      const route=e.routes[0];
+      const distance=(route.summary.totalDistance/1000).toFixed(2);
+      const duree=Math.round(route.summary.totalTime/60);
+      if(info) info.textContent=`🚗 Distance : ${distance} km — ⏱️ Durée : ${duree} min`;
+    }).addTo(map);
   });
 }
 
-function supprimerItineraire() {
-  if (routeControl) {
-    map.removeControl(routeControl);
-    routeControl = null;
-    const info = document.getElementById("itineraireInfo");
-    if (info) info.textContent = "🚗 Aucune route tracée";
-  }
+function supprimerItineraire(){ if(routeControl && map){ map.removeControl(routeControl); routeControl=null; const info=document.getElementById("itineraireInfo"); if(info) info.textContent="🚗 Aucune route tracée"; } }
+
+/* ===========================================================
+   🧾 COMMANDES & MODIFS CLIENTS
+   =========================================================== */
+function commanderClient(livreurUid, clientId, nomClient){
+  const produit=prompt("Quel produit souhaite commander "+decodeURIComponent(nomClient)+" ?");
+  if(!produit) return;
+  const commande={produit:produit.trim(), date:new Date().toISOString(), status:"en attente", par:CURRENT_UID};
+  db.ref(`commandes/${livreurUid}/${clientId}`).push(commande).catch(()=>{});
+}
+
+function renommerClient(livreurUid,id,oldName){
+  const nouveau=prompt("Nouveau nom :",decodeURIComponent(oldName));
+  if(!nouveau) return;
+  db.ref(`clients/${livreurUid}/${id}/name`).set(nouveau).catch(()=>{});
+}
+
+function supprimerClient(livreurUid,id){
+  if(!confirm("Supprimer définitivement ce client ?")) return;
+  db.ref(`clients/${livreurUid}/${id}`).remove().catch(()=>{});
 }
 
 /* ===========================================================
-   🧾 COMMANDES + MODIFS CLIENTS
+   🔍 RECHERCHE CLIENTS
    =========================================================== */
-function commanderClient(livreurUid, clientId, nomClient) {
-  const produit = prompt("Quel produit souhaite commander " + decodeURIComponent(nomClient) + " ?");
-  if (!produit) return;
+function enableSearchClients(){
+  const searchInput=document.getElementById("searchClient");
+  const clearBtn=document.getElementById("clearSearch");
+  if(!searchInput||!clearBtn) return;
 
-  const commande = {
-    produit: produit.trim(),
-    date: new Date().toISOString(),
-    status: "en attente",
-    par: CURRENT_UID
-  };
-
-  db.ref(`commandes/${livreurUid}/${clientId}`).push(commande)
-    .then(() => alert("✅ Commande enregistrée avec succès !"))
-    .catch(err => alert("❌ Erreur : " + err.message));
+  searchInput.addEventListener("input",e=>filtrerClients(e.target.value.trim().toLowerCase()));
+  clearBtn.addEventListener("click",()=>{ searchInput.value=""; filtrerClients(""); });
 }
 
-function renommerClient(livreurUid, id, oldName) {
-  const nouveau = prompt("Nouveau nom :", decodeURIComponent(oldName));
-  if (!nouveau) return;
-  db.ref(`clients/${livreurUid}/${id}/name`).set(nouveau)
-    .then(() => alert("✅ Nom mis à jour."))
-    .catch(err => alert("❌ Erreur : " + err.message));
-}
-
-function supprimerClient(livreurUid, id) {
-  if (!confirm("Supprimer définitivement ce client ?")) return;
-  db.ref(`clients/${livreurUid}/${id}`).remove()
-    .then(() => alert("✅ Client supprimé."))
-    .catch(err => alert("❌ Erreur : " + err.message));
-}
-
-/* ===========================================================
-   🔍 RECHERCHE CLIENTS (avec bouton ❌ et surbrillance)
-   =========================================================== */
-function enableSearchClients() {
-  const searchInput = document.getElementById("searchClient");
-  const clearBtn = document.getElementById("clearSearch");
-  if (!searchInput || !clearBtn) return;
-
-  searchInput.addEventListener("input", e => {
-    const query = e.target.value.trim().toLowerCase();
-    filtrerClients(query);
-  });
-
-  clearBtn.addEventListener("click", () => {
-    searchInput.value = "";
-    filtrerClients("");
-  });
-}
-
-function filtrerClients(query) {
-  markers.forEach(m => {
-    const nom = m.options.nom?.toLowerCase() || "";
-    const match = nom.includes(query);
-
-    if (match && query.length > 0) {
-      const regex = new RegExp(`(${query})`, "gi");
-      const highlighted = m.options.nom.replace(regex, '<mark>$1</mark>');
+function filtrerClients(query){
+  markers.forEach(m=>{
+    const nom=m.nom?.toLowerCase()||"";
+    const match=nom.includes(query);
+    if(query.length && match){
+      const regex=new RegExp(`(${query})`,"gi");
+      const highlighted=m.nom.replace(regex,'<mark>$1</mark>');
       m.bindPopup(`<b>${highlighted}</b>`);
       m.getElement()?.classList.add("highlight");
-    } else {
-      m.getElement()?.classList.remove("highlight");
-    }
-
-    if (query === "" || match) {
-      map.addLayer(m);
-    } else {
-      map.removeLayer(m);
-    }
+    }else{ m.getElement()?.classList.remove("highlight"); }
+    query===""||match?map.addLayer(m):map.removeLayer(m);
   });
 }
 
-const style = document.createElement("style");
-style.textContent = `
-  .highlight { filter: drop-shadow(0 0 6px yellow); z-index: 9999 !important; }
-  mark { background: yellow; color: black; padding: 0 2px; }
+const style=document.createElement("style");
+style.textContent=`
+  .highlight{filter:drop-shadow(0 0 6px yellow);z-index:9999!important;}
+  mark{background:yellow;color:black;padding:0 2px;}
 `;
 document.head.appendChild(style);
 
 /* ===========================================================
    🧭 BOUTONS FLOTTANTS
    =========================================================== */
-function createBottomButtons() {
-  if (document.getElementById("mapButtons")) return;
-  const c = document.createElement("div");
-  c.id = "mapButtons";
-  c.style =
-    "position:absolute;bottom:20px;right:20px;display:flex;flex-direction:column;gap:10px;z-index:2000";
+function createBottomButtons(){
+  if(document.getElementById("mapButtons")) return;
+  const c=document.createElement("div"); c.id="mapButtons";
+  c.style="position:absolute;bottom:20px;right:20px;display:flex;flex-direction:column;gap:10px;z-index:2000";
 
-  const makeBtn = txt => {
-    const b = document.createElement("button");
-    b.textContent = txt;
-    b.style.cssText =
-      "background:#007bff;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;";
-    return b;
+  const makeBtn=txt=>{ const b=document.createElement("button"); b.textContent=txt; b.style.cssText="background:#007bff;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;"; return b; };
+
+  const btnSat=makeBtn("🛰️ Vue satellite");
+  btnSat.onclick=()=>{
+    satelliteMode=!satelliteMode;
+    if(satelliteMode){ map.addLayer(satelliteTiles); map.removeLayer(normalTiles); btnSat.textContent="🗺️ Vue normale"; }
+    else{ map.addLayer(normalTiles); map.removeLayer(satelliteTiles); btnSat.textContent="🛰️ Vue satellite"; }
   };
 
-  const btnSat = makeBtn("🛰️ Vue satellite");
-  btnSat.onclick = () => {
-    satelliteMode = !satelliteMode;
-    if (satelliteMode) {
-      map.addLayer(satelliteTiles);
-      map.removeLayer(normalTiles);
-      btnSat.textContent = "🗺️ Vue normale";
-    } else {
-      map.addLayer(normalTiles);
-      map.removeLayer(satelliteTiles);
-      btnSat.textContent = "🛰️ Vue satellite";
-    }
-  };
+  const btnPos=makeBtn("📍 Ma position");
+  btnPos.onclick=()=> userMarker && map.setView(userMarker.getLatLng(),15);
 
-  const btnPos = makeBtn("📍 Ma position");
-  btnPos.onclick = () => userMarker && map.setView(userMarker.getLatLng(), 15);
-
-  c.append(btnSat, btnPos);
-  document.body.appendChild(c);
+  c.append(btnSat,btnPos); document.body.appendChild(c);
 }
