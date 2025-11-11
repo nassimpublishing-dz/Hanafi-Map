@@ -110,7 +110,7 @@ function startApp() {
   watchPosition();
   listenClients();
   enableSearchClients();
-  if (isAdmin) enableAdminTools();
+  if (isAdmin) enableAdminTools?.();
 }
 
 /* ---------- CLEANUP ---------- */
@@ -183,7 +183,7 @@ function watchPosition() {
       }
     },
     err => console.warn("Erreur géoloc watch :", err),
-    { enableHighAccuracy: false, maximumAge: 8000, timeout: 30000 }
+    { enableHighAccuracy: true, maximumAge: 8000, timeout: 30000 }
   );
 }
 
@@ -266,11 +266,14 @@ function popupClientHtml(livreurUid, id, c) {
 }
 
 /* ===========================================================
-   🚗 ITINÉRAIRE
+   🚗 ITINÉRAIRE (avec distance/durée affichées en bas)
    =========================================================== */
 let routeControl = null;
 function calculerItineraire(lat, lng) {
   if (routeControl) map.removeControl(routeControl);
+
+  const summaryDiv = document.getElementById("routeSummary");
+  if (summaryDiv) summaryDiv.style.display = "none";
 
   if (!navigator.geolocation) {
     alert("La géolocalisation n’est pas supportée sur cet appareil.");
@@ -292,7 +295,9 @@ function calculerItineraire(lat, lng) {
       const route = e.routes[0];
       const distance = (route.summary.totalDistance / 1000).toFixed(2);
       const duree = Math.round(route.summary.totalTime / 60);
-      alert(`🚗 Distance : ${distance} km\n⏱️ Durée : ${duree} min`);
+      const summary = `🚗 <b>${distance} km</b> — ⏱️ <b>${duree} min</b>`;
+      summaryDiv.innerHTML = summary;
+      summaryDiv.style.display = "block";
     })
     .addTo(map);
   });
@@ -302,44 +307,11 @@ function supprimerItineraire() {
   if (routeControl) {
     map.removeControl(routeControl);
     routeControl = null;
-    alert("🗑️ Itinéraire supprimé.");
+    const summaryDiv = document.getElementById("routeSummary");
+    if (summaryDiv) summaryDiv.style.display = "none";
   } else {
     alert("⚠️ Aucun itinéraire actif.");
   }
-}
-
-/* ===========================================================
-   🧾 COMMANDES + MODIFICATIONS
-   =========================================================== */
-function commanderClient(livreurUid, clientId, nomClient) {
-  const produit = prompt("Quel produit souhaite commander " + decodeURIComponent(nomClient) + " ?");
-  if (!produit) return;
-
-  const commande = {
-    produit: produit.trim(),
-    date: new Date().toISOString(),
-    status: "en attente",
-    par: CURRENT_UID
-  };
-
-  db.ref(`commandes/${livreurUid}/${clientId}`).push(commande)
-    .then(() => alert("✅ Commande enregistrée avec succès !"))
-    .catch(err => alert("❌ Erreur lors de la commande : " + err.message));
-}
-
-function renommerClient(livreurUid, id, oldName) {
-  const nouveau = prompt("Nouveau nom :", decodeURIComponent(oldName));
-  if (!nouveau) return;
-  db.ref(`clients/${livreurUid}/${id}/name`).set(nouveau)
-    .then(() => alert("✅ Nom mis à jour."))
-    .catch(err => alert("❌ Erreur : " + err.message));
-}
-
-function supprimerClient(livreurUid, id) {
-  if (!confirm("Supprimer définitivement ce client ?")) return;
-  db.ref(`clients/${livreurUid}/${id}`).remove()
-    .then(() => alert("✅ Client supprimé."))
-    .catch(err => alert("❌ Erreur : " + err.message));
 }
 
 /* ===========================================================
@@ -366,29 +338,10 @@ function filtrerClients(query) {
     const nom = m.options.nom?.toLowerCase() || "";
     const match = nom.includes(query);
 
-    if (match && query.length > 0) {
-      const regex = new RegExp(`(${query})`, "gi");
-      const highlighted = m.options.nom.replace(regex, '<mark>$1</mark>');
-      m.bindPopup(`<b>${highlighted}</b>`);
-      m.getElement()?.classList.add("highlight");
-    } else {
-      m.getElement()?.classList.remove("highlight");
-    }
-
-    if (query === "" || match) {
-      map.addLayer(m);
-    } else {
-      map.removeLayer(m);
-    }
+    if (query === "" || match) map.addLayer(m);
+    else map.removeLayer(m);
   });
 }
-
-const style = document.createElement("style");
-style.textContent = `
-  .highlight { filter: drop-shadow(0 0 6px yellow); z-index: 9999 !important; }
-  mark { background: yellow; color: black; padding: 0 2px; }
-`;
-document.head.appendChild(style);
 
 /* ===========================================================
    🧭 BOUTONS FLOTTANTS
