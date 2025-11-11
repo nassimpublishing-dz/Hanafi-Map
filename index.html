@@ -15,34 +15,51 @@
   <style>
     body, html { margin:0; padding:0; height:100%; font-family:Arial,sans-serif; background:#f0f2f5; }
     #map { width:100%; height:100vh; display:none; }
+
     #loginContainer {
       position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
       background:white; padding:30px 40px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.2);
       text-align:center; width:280px;
     }
     #loginContainer h2 { margin-bottom:20px; color:#007bff; }
-    #loginContainer input { display:block; width:100%; margin-bottom:12px; padding:10px; border:1px solid #ccc; border-radius:6px; font-size:14px; }
-    #loginBtn { background:#007bff;color:#fff;border:none;padding:10px;width:100%;border-radius:6px; cursor:pointer; font-weight:bold; }
+    #loginContainer input {
+      display:block; width:100%; margin-bottom:12px;
+      padding:10px; border:1px solid #ccc; border-radius:6px; font-size:14px;
+    }
+    #loginBtn {
+      background:#007bff; color:#fff; border:none; padding:10px;
+      width:100%; border-radius:6px; cursor:pointer; font-weight:bold;
+    }
     #loginBtn:hover { background:#0056b3; }
     #loginError { color:red; font-size:13px; margin-top:8px; }
+
     #logoutBtn {
       position:absolute; top:10px; right:10px; z-index:9999;
-      display:none; background:#dc3545;color:#fff;border:none;padding:8px 12px;border-radius:6px; cursor:pointer; font-weight:bold;
+      display:none; background:#dc3545;color:#fff;border:none;
+      padding:8px 12px;border-radius:6px; cursor:pointer; font-weight:bold;
     }
     #logoutBtn:hover { background:#b52a36; }
+
     #controls {
       position:absolute; top:10px; left:10px; z-index:9999;
       display:none; flex-direction:column; gap:8px;
     }
+
     .search-container { position:relative; width:220px; }
-    #searchInput { width:100%; padding:8px 30px 8px 8px; border:2px solid #007bff; border-radius:6px; font-size:14px; }
+    #searchClient {
+      width:100%; padding:8px 30px 8px 8px;
+      border:2px solid #007bff; border-radius:6px; font-size:14px;
+    }
     #clearSearch {
       position:absolute; right:8px; top:50%; transform:translateY(-50%);
-      background:#ccc; border:none; border-radius:50%; width:20px; height:20px; font-weight:bold; color:#333; cursor:pointer; display:none;
+      background:#ccc; border:none; border-radius:50%; width:20px; height:20px;
+      font-weight:bold; color:#333; cursor:pointer; display:none;
     }
+
     #routeSummary {
-      display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:99999;
-      background:rgba(0,0,0,0.75); color:#fff; padding:10px 14px; border-radius:10px;
+      display:none; position:fixed; left:50%; transform:translateX(-50%);
+      bottom:16px; z-index:99999; background:rgba(0,0,0,0.75);
+      color:#fff; padding:10px 14px; border-radius:10px;
       font-weight:600; font-size:14px;
     }
   </style>
@@ -67,8 +84,8 @@
   <!-- Controls -->
   <div id="controls">
     <div class="search-container">
-      <input id="searchInput" type="text" placeholder="🔍 Rechercher un client..." />
-      <button id="clearSearch">×</button>
+      <input id="searchClient" placeholder="Rechercher un client...">
+      <button id="clearSearch">✖</button>
     </div>
   </div>
 
