@@ -5,67 +5,157 @@
   <title>Hanafi Livraison</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- Manifest & Icon -->
   <link rel="manifest" href="/Hanafi-Map/manifest.json" />
   <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png" />
 
   <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-sA+e2bdsLB4Z8aNGU3qY1I9V1rD2UjM8yQp+qk2f5oA="
+    crossorigin=""
+  />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"
+  />
 
   <style>
-    body, html { margin:0; padding:0; height:100%; font-family:Arial,sans-serif; background:#f0f2f5; }
-    #map { width:100%; height:100vh; display:none; }
-
-    #loginContainer {
-      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-      background:white; padding:30px 40px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.2);
-      text-align:center; width:280px;
+    /* Global */
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+      font-family: Arial, sans-serif; background: #f0f2f5;
     }
-    #loginContainer h2 { margin-bottom:20px; color:#007bff; }
+
+    /* Carte */
+    #map {
+      width: 100%;
+      height: 100vh;
+      display: none;
+    }
+
+    /* Login */
+    #loginContainer {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 30px 40px;
+      border-radius: 12px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+      text-align: center;
+      width: 280px;
+    }
+    #loginContainer h2 {
+      margin-bottom: 20px;
+      color: #007bff;
+    }
     #loginContainer input {
-      display:block; width:100%; margin-bottom:12px;
-      padding:10px; border:1px solid #ccc; border-radius:6px; font-size:14px;
+      display: block;
+      width: 100%;
+      margin-bottom: 12px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
     }
     #loginBtn {
-      background:#007bff; color:#fff; border:none; padding:10px;
-      width:100%; border-radius:6px; cursor:pointer; font-weight:bold;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      padding: 10px;
+      width: 100%;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
     }
-    #loginBtn:hover { background:#0056b3; }
-    #loginError { color:red; font-size:13px; margin-top:8px; }
+    #loginBtn:hover {
+      background: #0056b3;
+    }
+    #loginError {
+      color: red;
+      font-size: 13px;
+      margin-top: 8px;
+    }
 
+    /* Logout */
     #logoutBtn {
-      position:absolute; top:10px; right:10px; z-index:9999;
-      display:none; background:#dc3545;color:#fff;border:none;
-      padding:8px 12px;border-radius:6px; cursor:pointer; font-weight:bold;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 9999;
+      display: none;
+      background: #dc3545;
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
     }
-    #logoutBtn:hover { background:#b52a36; }
+    #logoutBtn:hover {
+      background: #b52a36;
+    }
 
+    /* Contrôles */
     #controls {
-      position:absolute; top:10px; left:10px; z-index:9999;
-      display:none; flex-direction:column; gap:8px;
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 9999;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
     }
 
-    .search-container { position:relative; width:220px; }
+    /* Recherche client */
+    .search-container {
+      position: relative;
+      width: 220px;
+    }
     #searchClient {
-      width:100%; padding:8px 30px 8px 8px;
-      border:2px solid #007bff; border-radius:6px; font-size:14px;
+      width: 100%;
+      padding: 8px 30px 8px 8px;
+      border: 2px solid #007bff;
+      border-radius: 6px;
+      font-size: 14px;
     }
     #clearSearch {
-      position:absolute; right:8px; top:50%; transform:translateY(-50%);
-      background:#ccc; border:none; border-radius:50%; width:20px; height:20px;
-      font-weight:bold; color:#333; cursor:pointer; display:none;
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: #ccc;
+      border: none;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-weight: bold;
+      color: #333;
+      cursor: pointer;
+      display: none;
     }
 
+    /* Résumé de route */
     #routeSummary {
-      display:none; position:fixed; left:50%; transform:translateX(-50%);
-      bottom:16px; z-index:99999; background:rgba(0,0,0,0.75);
-      color:#fff; padding:10px 14px; border-radius:10px;
-      font-weight:600; font-size:14px;
+      display: none;
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 16px;
+      z-index: 99999;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 14px;
     }
   </style>
 </head>
-<body>
 
+<body>
   <!-- Login -->
   <div id="loginContainer">
     <h2>Connexion Livreur</h2>
@@ -78,36 +168,37 @@
   <!-- Carte -->
   <div id="map"></div>
 
-  <!-- Logout -->
+  <!-- Déconnexion -->
   <button id="logoutBtn">Se déconnecter</button>
 
-  <!-- Controls -->
+  <!-- Contrôles -->
   <div id="controls">
     <div class="search-container">
-      <input id="searchClient" placeholder="Rechercher un client...">
+      <input id="searchClient" placeholder="Rechercher un client..." />
       <button id="clearSearch">✖</button>
     </div>
   </div>
 
+  <!-- Résumé du trajet -->
   <div id="routeSummary"></div>
 
-  <!-- Leaflet JS -->
+  <!-- Dépendances JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
-  <!-- Firebase SDK v8 -->
+  <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
-  <!-- Configuration Firebase -->
+  <!-- Initialisation Firebase -->
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAtDTNbi_vMSrtHpHigy00quXOLXyGnQ9c",
       authDomain: "hanafi-livraison.firebaseapp.com",
       databaseURL: "https://hanafi-livraison-default-rtdb.firebaseio.com",
       projectId: "hanafi-livraison",
-      storageBucket: "hanafi-livraison.firebasestorage.app",
+      storageBucket: "hanafi-livraison.appspot.com",
       messagingSenderId: "106630001469",
       appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
     };
@@ -117,22 +208,26 @@
   <!-- Script principal -->
   <script src="/Hanafi-Map/app.js"></script>
 
-  <!-- Affichage map après login -->
+  <!-- Gestion d’affichage après connexion -->
   <script>
-    firebase.auth().onAuthStateChanged(function(user) {
+    firebase.auth().onAuthStateChanged(user => {
+      const loginContainer = document.getElementById("loginContainer");
+      const map = document.getElementById("map");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const controls = document.getElementById("controls");
+
       if (user) {
-        document.getElementById("loginContainer").style.display = "none";
-        document.getElementById("map").style.display = "block";
-        document.getElementById("logoutBtn").style.display = "block";
-        document.getElementById("controls").style.display = "flex";
+        loginContainer.style.display = "none";
+        map.style.display = "block";
+        logoutBtn.style.display = "block";
+        controls.style.display = "flex";
       } else {
-        document.getElementById("loginContainer").style.display = "block";
-        document.getElementById("map").style.display = "none";
-        document.getElementById("logoutBtn").style.display = "none";
-        document.getElementById("controls").style.display = "none";
+        loginContainer.style.display = "block";
+        map.style.display = "none";
+        logoutBtn.style.display = "none";
+        controls.style.display = "none";
       }
     });
   </script>
-
 </body>
 </html>
