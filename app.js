@@ -26,6 +26,7 @@ const livreurIcon = L.icon({
 let map;
 let routeLayer = L.layerGroup();
 let clientsLayer = L.layerGroup();
+
 let userMarker = null;
 let geoWatchId = null;
 let clientsRef = null;
@@ -39,22 +40,11 @@ function initMap() {
   routeLayer.addTo(map);
   clientsLayer.addTo(map);
 
-  // ✅ Conteneur info distance/durée
+  // ✅ zone d’infos itinéraire
   const infoDiv = document.createElement("div");
   infoDiv.id = "routeInfo";
-  infoDiv.style.cssText = `
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    font-size: 14px;
-    padding: 8px 14px;
-    border-radius: 8px;
-    z-index: 1500;
-    display: none;
-  `;
+  infoDiv.style.cssText =
+    "position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:8px;font-size:13px;box-shadow:0 0 6px rgba(0,0,0,0.2);z-index:1500;display:none;";
   document.body.appendChild(infoDiv);
 
   return map;
@@ -139,13 +129,24 @@ function cleanup() {
   document.getElementById("controls").style.display = "none";
 
   if (geoWatchId !== null) {
-    try { navigator.geolocation.clearWatch(geoWatchId); } catch (_) {}
+    try {
+      navigator.geolocation.clearWatch(geoWatchId);
+    } catch (_) {}
     geoWatchId = null;
   }
-  if (clientsRef) clientsRef.off();
+  if (clientsRef) {
+    clientsRef.off();
+    clientsRef = null;
+  }
   if (routeLayer) routeLayer.clearLayers();
   if (clientsLayer) clientsLayer.clearLayers();
-  if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+  if (userMarker) {
+    map.removeLayer(userMarker);
+    userMarker = null;
+  }
+
+  const info = document.getElementById("routeInfo");
+  if (info) info.style.display = "none";
 }
 
 /* ===========================================================
@@ -159,7 +160,9 @@ function watchPosition() {
   }
 
   if (geoWatchId !== null) {
-    try { navigator.geolocation.clearWatch(geoWatchId); } catch (_) {}
+    try {
+      navigator.geolocation.clearWatch(geoWatchId);
+    } catch (_) {}
   }
 
   navigator.geolocation.getCurrentPosition(
@@ -183,6 +186,7 @@ function watchPosition() {
       } else {
         userMarker.setLatLng([lat, lng]);
       }
+
       if (CURRENT_UID) {
         db.ref("livreurs/" + CURRENT_UID)
           .set({ lat, lng, updatedAt: Date.now() })
@@ -195,55 +199,174 @@ function watchPosition() {
 }
 
 /* ===========================================================
-   🚗 ITINÉRAIRE
+   👥 CLIENTS
+   =========================================================== */
+let markers = [];
+
+function listenClients() {
+  if (!db || !CURRENT_UID) return;
+  if (clientsRef) clientsRef.off();
+
+  const path = isAdmin ? "clients" : `clients/${CURRENT_UID}`;
+  clientsRef = db.ref(path);
+  clientsRef.on("value", snap => {
+    clientsLayer.clearLayers();
+    markers = [];
+    const data = snap.val();
+    if (!data) return;
+    if (isAdmin) {
+      Object.entries(data).forEach(([uid, list]) => {
+        Object.entries(list || {}).forEach(([id, c]) => addClientMarker(uid, id, c));
+      });
+    } else {
+      Object.entries(data).forEach(([id, c]) => addClientMarker(CURRENT_UID, id, c));
+    }
+  });
+}
+
+function addClientMarker(livreurUid, id, c) {
+  if (!c || typeof c.lat !== "number" || typeof c.lng !== "number") return;
+  const marker = L.marker([c.lat, c.lng], { icon: clientIcon, nom: c.name || "Client" }).addTo(clientsLayer);
+  marker.bindPopup(popupClientHtml(livreurUid, id, c));
+  markers.push(marker);
+}
+
+/* ===========================================================
+   🔹 POPUP CLIENT COMPLET
+   =========================================================== */
+function popupClientHtml(livreurUid, id, c) {
+  const nom = c.name || "Client";
+  const safeNom = encodeURIComponent(nom);
+  const safeLivreur = encodeURIComponent(livreurUid);
+  const safeId = encodeURIComponent(id);
+  const canEdit = isAdmin || livreurUid === CURRENT_UID;
+
+  return `
+    <div style="font-size:13px;max-width:230px;display:flex;flex-direction:column;gap:6px;">
+      <b>${nom}</b>
+      <div style="margin-top:4px;display:flex;flex-direction:column;gap:5px;">
+        <button onclick="calculerItineraire(${c.lat},${c.lng})"
+          style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+          🚗 Itinéraire
+        </button>
+
+        <button onclick="supprimerItineraire()"
+          style="background:#555;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+          ❌ Supprimer itinéraire
+        </button>
+
+        <button onclick="commanderClient('${safeLivreur}','${safeId}','${safeNom}')"
+          style="background:#FF9800;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+          🧾 Commander
+        </button>
+
+        ${canEdit ? `
+          <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
+            style="background:#009688;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+            ✏️ Modifier nom
+          </button>
+
+          <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
+            style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+            🗑️ Supprimer client
+          </button>
+        ` : ""}
+      </div>
+    </div>
+  `;
+}
+
+/* ===========================================================
+   🚗 ITINÉRAIRE (Optimisé via GraphHopper)
    =========================================================== */
 let routeControl = null;
-function calculerItineraire(lat, lng) {
-  if (routeControl) map.removeControl(routeControl);
 
+async function calculerItineraire(lat, lng) {
   if (!navigator.geolocation) {
     alert("La géolocalisation n’est pas supportée sur cet appareil.");
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(pos => {
+  navigator.geolocation.getCurrentPosition(async pos => {
     const start = [pos.coords.latitude, pos.coords.longitude];
     const end = [lat, lng];
     const infoDiv = document.getElementById("routeInfo");
 
-    routeControl = L.Routing.control({
-      waypoints: [L.latLng(start[0], start[1]), L.latLng(end[0], end[1])],
-      lineOptions: { styles: [{ color: '#0074FF', weight: 4 }] },
-      routeWhileDragging: false,
-      showAlternatives: false,
-      createMarker: () => null
-    })
-    .on('routesfound', e => {
-      const route = e.routes[0];
-      const distance = (route.summary.totalDistance / 1000).toFixed(2);
-      const duree = Math.round(route.summary.totalTime / 60);
-      infoDiv.innerHTML = `🚗 <b>Distance :</b> ${distance} km — ⏱️ <b>Durée :</b> ${duree} min`;
+    // Supprimer itinéraire précédent
+    routeLayer.clearLayers();
+
+    try {
+      const url = `https://graphhopper.com/api/1/route?point=${start[0]},${start[1]}&point=${end[0]},${end[1]}&vehicle=car&locale=fr&key=${GRAPHHOPPER_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!data.paths || !data.paths.length) throw new Error("Aucun itinéraire trouvé");
+
+      const path = data.paths[0];
+      const distanceKm = (path.distance / 1000).toFixed(2);
+      const dureeMin = Math.round(path.time / 60000);
+
+      // Affichage infos sous la carte
+      infoDiv.innerHTML = `🚗 <b>Distance :</b> ${distanceKm} km — ⏱️ <b>Durée :</b> ${dureeMin} min`;
       infoDiv.style.display = "block";
-    })
-    .addTo(map);
+
+      // Tracé sur la carte
+      const coords = path.points.coordinates.map(c => [c[1], c[0]]);
+      const polyline = L.polyline(coords, { color: "#0074FF", weight: 4 }).addTo(routeLayer);
+
+      // Centrer la carte sur l’itinéraire
+      map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+
+    } catch (err) {
+      console.error("Erreur itinéraire :", err);
+      alert("❌ Impossible de calculer l'itinéraire.");
+    }
   });
 }
 
 function supprimerItineraire() {
-  if (routeControl) {
-    map.removeControl(routeControl);
-    routeControl = null;
-    const infoDiv = document.getElementById("routeInfo");
-    if (infoDiv) infoDiv.style.display = "none";
-  } else {
-    alert("⚠️ Aucun itinéraire actif.");
-  }
+  routeLayer.clearLayers();
+  const infoDiv = document.getElementById("routeInfo");
+  if (infoDiv) infoDiv.style.display = "none";
 }
 
 /* ===========================================================
-   🔍 BARRE DE RECHERCHE CLIENTS
+   🧾 COMMANDES + MODIFS CLIENTS
    =========================================================== */
-let markers = [];
+function commanderClient(livreurUid, clientId, nomClient) {
+  const produit = prompt("Quel produit souhaite commander " + decodeURIComponent(nomClient) + " ?");
+  if (!produit) return;
+
+  const commande = {
+    produit: produit.trim(),
+    date: new Date().toISOString(),
+    status: "en attente",
+    par: CURRENT_UID
+  };
+
+  db.ref(`commandes/${livreurUid}/${clientId}`).push(commande)
+    .then(() => alert("✅ Commande enregistrée avec succès !"))
+    .catch(err => alert("❌ Erreur : " + err.message));
+}
+
+function renommerClient(livreurUid, id, oldName) {
+  const nouveau = prompt("Nouveau nom :", decodeURIComponent(oldName));
+  if (!nouveau) return;
+  db.ref(`clients/${livreurUid}/${id}/name`).set(nouveau)
+    .then(() => alert("✅ Nom mis à jour."))
+    .catch(err => alert("❌ Erreur : " + err.message));
+}
+
+function supprimerClient(livreurUid, id) {
+  if (!confirm("Supprimer définitivement ce client ?")) return;
+  db.ref(`clients/${livreurUid}/${id}`).remove()
+    .then(() => alert("✅ Client supprimé."))
+    .catch(err => alert("❌ Erreur : " + err.message));
+}
+
+/* ===========================================================
+   🔍 RECHERCHE CLIENTS (avec bouton ❌ et surbrillance)
+   =========================================================== */
 function enableSearchClients() {
   const searchInput = document.getElementById("searchClient");
   const clearBtn = document.getElementById("clearSearch");
@@ -264,6 +387,7 @@ function filtrerClients(query) {
   markers.forEach(m => {
     const nom = m.options.nom?.toLowerCase() || "";
     const match = nom.includes(query);
+
     if (match && query.length > 0) {
       const regex = new RegExp(`(${query})`, "gi");
       const highlighted = m.options.nom.replace(regex, '<mark>$1</mark>');
@@ -272,8 +396,12 @@ function filtrerClients(query) {
     } else {
       m.getElement()?.classList.remove("highlight");
     }
-    if (query === "" || match) map.addLayer(m);
-    else map.removeLayer(m);
+
+    if (query === "" || match) {
+      map.addLayer(m);
+    } else {
+      map.removeLayer(m);
+    }
   });
 }
 
