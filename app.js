@@ -24,6 +24,15 @@ const livreurIcon = L.icon({
 
 /* ---------- MAP ---------- */
 let map;
+let routeLayer = L.layerGroup();
+let clientsLayer = L.layerGroup();
+
+let userMarker = null;
+let geoWatchId = null;
+let clientsRef = null;
+let isAdmin = false;
+let CURRENT_UID = null;
+
 function initMap() {
   if (map) return map;
   map = L.map("map").setView(defaultCenter, defaultZoom);
@@ -40,15 +49,6 @@ const satelliteTiles = L.tileLayer(
 );
 let satelliteMode = false;
 
-let routeLayer = L.layerGroup();
-let clientsLayer = L.layerGroup();
-
-let userMarker = null;
-let geoWatchId = null;
-let clientsRef = null;
-let isAdmin = false;
-let CURRENT_UID = null;
-
 /* ===========================================================
    🔐 AUTHENTIFICATION
    =========================================================== */
@@ -59,17 +59,16 @@ document.getElementById("loginBtn").addEventListener("click", () => {
     document.getElementById("loginError").textContent = "Veuillez remplir tous les champs";
     return;
   }
-  auth
-    .signInWithEmailAndPassword(email, password)
+  auth.signInWithEmailAndPassword(email, password)
     .then(() => console.log("✅ Connexion réussie"))
-    .catch((err) => {
+    .catch(err => {
       document.getElementById("loginError").textContent = err.message;
     });
 });
 
 document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
 
-auth.onAuthStateChanged(async (user) => {
+auth.onAuthStateChanged(async user => {
   if (user) {
     CURRENT_UID = user.uid;
     console.log("✅ Connecté :", user.email);
@@ -110,7 +109,7 @@ function startApp() {
   createBottomButtons();
   watchPosition();
   listenClients();
-  enableAddClient();
+  enableSearchClients();
   if (isAdmin) enableAdminTools();
 }
 
@@ -156,19 +155,19 @@ function watchPosition() {
   }
 
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
+    pos => {
       const { latitude: lat, longitude: lng } = pos.coords;
       if (!userMarker) userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
       map.setView([lat, lng], 15);
     },
-    (err) => {
+    err => {
       console.warn("Erreur géoloc initiale :", err);
       map.setView(defaultCenter, defaultZoom);
     }
   );
 
   geoWatchId = navigator.geolocation.watchPosition(
-    (pos) => {
+    pos => {
       const { latitude: lat, longitude: lng } = pos.coords;
       if (!userMarker) {
         userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
@@ -180,10 +179,10 @@ function watchPosition() {
       if (CURRENT_UID) {
         db.ref("livreurs/" + CURRENT_UID)
           .set({ lat, lng, updatedAt: Date.now() })
-          .catch((e) => console.warn("Firebase write err:", e));
+          .catch(e => console.warn("Firebase write err:", e));
       }
     },
-    (err) => console.warn("Erreur géoloc watch :", err),
+    err => console.warn("Erreur géoloc watch :", err),
     { enableHighAccuracy: false, maximumAge: 8000, timeout: 30000 }
   );
 }
@@ -191,14 +190,17 @@ function watchPosition() {
 /* ===========================================================
    👥 CLIENTS
    =========================================================== */
+let markers = [];
+
 function listenClients() {
   if (!db || !CURRENT_UID) return;
   if (clientsRef) clientsRef.off();
 
   const path = isAdmin ? "clients" : `clients/${CURRENT_UID}`;
   clientsRef = db.ref(path);
-  clientsRef.on("value", (snap) => {
+  clientsRef.on("value", snap => {
     clientsLayer.clearLayers();
+    markers = [];
     const data = snap.val();
     if (!data) return;
     if (isAdmin) {
@@ -213,8 +215,9 @@ function listenClients() {
 
 function addClientMarker(livreurUid, id, c) {
   if (!c || typeof c.lat !== "number" || typeof c.lng !== "number") return;
-  const marker = L.marker([c.lat, c.lng], { icon: clientIcon }).addTo(clientsLayer);
+  const marker = L.marker([c.lat, c.lng], { icon: clientIcon, nom: c.name || "Client" }).addTo(clientsLayer);
   marker.bindPopup(popupClientHtml(livreurUid, id, c));
+  markers.push(marker);
 }
 
 /* ===========================================================
@@ -225,155 +228,167 @@ function popupClientHtml(livreurUid, id, c) {
   const safeNom = encodeURIComponent(nom);
   const safeLivreur = encodeURIComponent(livreurUid);
   const safeId = encodeURIComponent(id);
-  const canEdit =
-    (typeof isAdmin !== "undefined" && isAdmin) ||
-    (typeof CURRENT_UID !== "undefined" && livreurUid === CURRENT_UID);
+  const canEdit = isAdmin || livreurUid === CURRENT_UID;
 
   return `
-    <div style="font-size:13px;max-width:260px;display:flex;flex-direction:column;gap:8px;">
+    <div style="font-size:13px;max-width:230px;display:flex;flex-direction:column;gap:6px;">
       <b>${nom}</b>
-      <div style="color:#555;font-size:12px;">${c.adresse ? escapeHtml(c.adresse) : ""}</div>
-
-      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+      <div style="margin-top:4px;display:flex;flex-direction:column;gap:5px;">
         <button onclick="calculerItineraire(${c.lat},${c.lng})"
-          style="background:#0074FF;color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer;">
+          style="background:#0074FF;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
           🚗 Itinéraire
         </button>
 
         <button onclick="supprimerItineraire()"
-          style="background:#6c757d;color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer;">
+          style="background:#555;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
           ❌ Supprimer itinéraire
         </button>
 
         <button onclick="commanderClient('${safeLivreur}','${safeId}','${safeNom}')"
-          style="background:#FF9800;color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer;">
-          🧾 Passer commande
+          style="background:#FF9800;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
+          🧾 Commander
         </button>
 
-        ${
-          canEdit
-            ? `
+        ${canEdit ? `
           <button onclick="renommerClient('${safeLivreur}','${safeId}','${safeNom}')"
-            style="background:#009688;color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer;">
+            style="background:#009688;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
             ✏️ Modifier nom
           </button>
 
           <button onclick="supprimerClient('${safeLivreur}','${safeId}')"
-            style="background:#e53935;color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer;">
+            style="background:#e53935;color:#fff;border:none;padding:6px;border-radius:6px;cursor:pointer;">
             🗑️ Supprimer client
           </button>
-        `
-            : `<div style="font-size:12px;color:#777;padding-top:4px;">(Actions de modification réservées)</div>`
-        }
+        ` : ""}
       </div>
     </div>
   `;
 }
 
-/* ---------- SUPPRIMER L’ITINÉRAIRE ACTIF ---------- */
+/* ===========================================================
+   🚗 ITINÉRAIRE
+   =========================================================== */
+let routeControl = null;
+function calculerItineraire(lat, lng) {
+  if (routeControl) map.removeControl(routeControl);
+
+  if (!navigator.geolocation) {
+    alert("La géolocalisation n’est pas supportée sur cet appareil.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(pos => {
+    const start = [pos.coords.latitude, pos.coords.longitude];
+    const end = [lat, lng];
+
+    routeControl = L.Routing.control({
+      waypoints: [L.latLng(start[0], start[1]), L.latLng(end[0], end[1])],
+      lineOptions: { styles: [{ color: '#0074FF', weight: 4 }] },
+      routeWhileDragging: false,
+      showAlternatives: false,
+      createMarker: () => null
+    })
+    .on('routesfound', e => {
+      const route = e.routes[0];
+      const distance = (route.summary.totalDistance / 1000).toFixed(2);
+      const duree = Math.round(route.summary.totalTime / 60);
+      alert(`🚗 Distance : ${distance} km\n⏱️ Durée : ${duree} min`);
+    })
+    .addTo(map);
+  });
+}
+
 function supprimerItineraire() {
-  try {
-    if (routeLayer && routeLayer.clearLayers) {
-      routeLayer.clearLayers();
-      if (typeof routePolyline !== "undefined" && routePolyline) routePolyline = null;
-      alert("🗑️ Itinéraire supprimé.");
-    } else {
-      alert("⚠️ Aucun itinéraire actif à supprimer.");
-    }
-  } catch (e) {
-    console.error("Erreur suppression itinéraire:", e);
-    alert("❌ Erreur lors de la suppression de l'itinéraire.");
+  if (routeControl) {
+    map.removeControl(routeControl);
+    routeControl = null;
+    alert("🗑️ Itinéraire supprimé.");
+  } else {
+    alert("⚠️ Aucun itinéraire actif.");
   }
 }
 
-/* ---------- PASSER UNE COMMANDE ---------- */
+/* ===========================================================
+   🧾 COMMANDES + MODIFICATIONS
+   =========================================================== */
 function commanderClient(livreurUid, clientId, nomClient) {
-  const nameDecoded = decodeURIComponent(nomClient || "");
-  const produit = prompt(`Quel produit souhaite commander ${nameDecoded} ?`);
+  const produit = prompt("Quel produit souhaite commander " + decodeURIComponent(nomClient) + " ?");
   if (!produit) return;
 
   const commande = {
     produit: produit.trim(),
     date: new Date().toISOString(),
     status: "en attente",
-    par: CURRENT_UID || "anonymous",
+    par: CURRENT_UID
   };
 
-  db.ref(`commandes/${decodeURIComponent(livreurUid)}/${decodeURIComponent(clientId)}`)
-    .push(commande)
+  db.ref(`commandes/${livreurUid}/${clientId}`).push(commande)
     .then(() => alert("✅ Commande enregistrée avec succès !"))
-    .catch((err) => {
-      console.error("Erreur commande:", err);
-      alert("❌ Erreur lors de l'enregistrement de la commande : " + (err.message || err));
-    });
+    .catch(err => alert("❌ Erreur lors de la commande : " + err.message));
 }
 
-/* ---------- RENOMMER CLIENT ---------- */
-function renommerClient(livreurUid, id, oldNameEncoded) {
-  const oldName = decodeURIComponent(oldNameEncoded || "");
-  const nouveau = prompt("Nouveau nom :", oldName);
+function renommerClient(livreurUid, id, oldName) {
+  const nouveau = prompt("Nouveau nom :", decodeURIComponent(oldName));
   if (!nouveau) return;
-  try {
-    const path = `clients/${decodeURIComponent(livreurUid)}/${decodeURIComponent(id)}/name`;
-    db.ref(path)
-      .set(nouveau)
-      .then(() => alert("✅ Nom mis à jour."))
-      .catch((err) => {
-        console.error("Erreur renommage:", err);
-        alert("❌ Erreur lors du renommage : " + (err.message || err));
-      });
-  } catch (e) {
-    console.error("Erreur construction path renommage:", e);
-    alert("❌ Erreur inattendue lors du renommage.");
-  }
+  db.ref(`clients/${livreurUid}/${id}/name`).set(nouveau)
+    .then(() => alert("✅ Nom mis à jour."))
+    .catch(err => alert("❌ Erreur : " + err.message));
 }
 
-/* ---------- SUPPRIMER CLIENT ---------- */
 function supprimerClient(livreurUid, id) {
   if (!confirm("Supprimer définitivement ce client ?")) return;
-  const livreurDecoded = decodeURIComponent(livreurUid);
-  const idDecoded = decodeURIComponent(id);
-  const path = `clients/${livreurDecoded}/${idDecoded}`;
-  db.ref(path)
-    .remove()
+  db.ref(`clients/${livreurUid}/${id}`).remove()
     .then(() => alert("✅ Client supprimé."))
-    .catch((err) => {
-      console.error("Erreur suppression client:", err);
-      alert("❌ Erreur lors de la suppression : " + (err.message || err));
-    });
-}
-
-/* ---------- ESCAPE HTML ---------- */
-function escapeHtml(s) {
-  return (s || "").toString().replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  }[m]));
+    .catch(err => alert("❌ Erreur : " + err.message));
 }
 
 /* ===========================================================
-   🚗 ITINÉRAIRE
+   🔍 BARRE DE RECHERCHE CLIENTS
    =========================================================== */
-async function calculerItineraire(destLat, destLng) {
-  if (!userMarker) return alert("Localisation en attente...");
-  const me = userMarker.getLatLng();
-  const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-    const path = data.paths?.[0];
-    if (!path) return alert("Aucun itinéraire trouvé.");
-    const pts = path.points.coordinates.map((p) => [p[1], p[0]]);
-    routeLayer.clearLayers();
-    L.polyline(pts, { color: "#0074FF", weight: 5 }).addTo(routeLayer);
-  } catch (e) {
-    console.error("Erreur itinéraire :", e);
-    alert("Impossible de récupérer l’itinéraire.");
-  }
+function enableSearchClients() {
+  const searchInput = document.getElementById("searchClient");
+  const clearBtn = document.getElementById("clearSearch");
+  if (!searchInput || !clearBtn) return;
+
+  searchInput.addEventListener("input", e => {
+    const query = e.target.value.trim().toLowerCase();
+    filtrerClients(query);
+  });
+
+  clearBtn.addEventListener("click", () => {
+    searchInput.value = "";
+    filtrerClients("");
+  });
 }
+
+function filtrerClients(query) {
+  markers.forEach(m => {
+    const nom = m.options.nom?.toLowerCase() || "";
+    const match = nom.includes(query);
+
+    if (match && query.length > 0) {
+      const regex = new RegExp(`(${query})`, "gi");
+      const highlighted = m.options.nom.replace(regex, '<mark>$1</mark>');
+      m.bindPopup(`<b>${highlighted}</b>`);
+      m.getElement()?.classList.add("highlight");
+    } else {
+      m.getElement()?.classList.remove("highlight");
+    }
+
+    if (query === "" || match) {
+      map.addLayer(m);
+    } else {
+      map.removeLayer(m);
+    }
+  });
+}
+
+const style = document.createElement("style");
+style.textContent = `
+  .highlight { filter: drop-shadow(0 0 6px yellow); z-index: 9999 !important; }
+  mark { background: yellow; color: black; padding: 0 2px; }
+`;
+document.head.appendChild(style);
 
 /* ===========================================================
    🧭 BOUTONS FLOTTANTS
@@ -385,7 +400,7 @@ function createBottomButtons() {
   c.style =
     "position:absolute;bottom:20px;right:20px;display:flex;flex-direction:column;gap:10px;z-index:2000";
 
-  const makeBtn = (txt) => {
+  const makeBtn = txt => {
     const b = document.createElement("button");
     b.textContent = txt;
     b.style.cssText =
