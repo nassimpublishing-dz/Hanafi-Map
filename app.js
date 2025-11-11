@@ -39,6 +39,15 @@ function initMap() {
   normalTiles.addTo(map);
   routeLayer.addTo(map);
   clientsLayer.addTo(map);
+
+  // ✅ zone d’infos itinéraire
+  const infoDiv = document.createElement("div");
+  infoDiv.id = "itineraireInfo";
+  infoDiv.style.cssText =
+    "position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:8px;font-size:13px;box-shadow:0 0 6px rgba(0,0,0,0.2);z-index:1500;";
+  infoDiv.textContent = "🚗 Aucune route tracée";
+  document.body.appendChild(infoDiv);
+
   return map;
 }
 
@@ -110,7 +119,7 @@ function startApp() {
   watchPosition();
   listenClients();
   enableSearchClients();
-  if (isAdmin) enableAdminTools();
+  if (isAdmin) enableAdminTools?.();
 }
 
 /* ---------- CLEANUP ---------- */
@@ -136,6 +145,9 @@ function cleanup() {
     map.removeLayer(userMarker);
     userMarker = null;
   }
+
+  const info = document.getElementById("itineraireInfo");
+  if (info) info.textContent = "🚗 Aucune route tracée";
 }
 
 /* ===========================================================
@@ -221,7 +233,7 @@ function addClientMarker(livreurUid, id, c) {
 }
 
 /* ===========================================================
-   🔹 POPUP CLIENT COMPLET + actions associées
+   🔹 POPUP CLIENT COMPLET
    =========================================================== */
 function popupClientHtml(livreurUid, id, c) {
   const nom = c.name || "Client";
@@ -266,16 +278,15 @@ function popupClientHtml(livreurUid, id, c) {
 }
 
 /* ===========================================================
-   🚗 ITINÉRAIRE
+   🚗 ITINÉRAIRE (affiche durée + distance sous la carte)
    =========================================================== */
 let routeControl = null;
+
 function calculerItineraire(lat, lng) {
   if (routeControl) map.removeControl(routeControl);
 
-  if (!navigator.geolocation) {
-    alert("La géolocalisation n’est pas supportée sur cet appareil.");
-    return;
-  }
+  const info = document.getElementById("itineraireInfo");
+  if (info) info.textContent = "⏳ Calcul de l'itinéraire...";
 
   navigator.geolocation.getCurrentPosition(pos => {
     const start = [pos.coords.latitude, pos.coords.longitude];
@@ -292,7 +303,7 @@ function calculerItineraire(lat, lng) {
       const route = e.routes[0];
       const distance = (route.summary.totalDistance / 1000).toFixed(2);
       const duree = Math.round(route.summary.totalTime / 60);
-      alert(`🚗 Distance : ${distance} km\n⏱️ Durée : ${duree} min`);
+      if (info) info.textContent = `🚗 Distance : ${distance} km — ⏱️ Durée : ${duree} min`;
     })
     .addTo(map);
   });
@@ -302,14 +313,13 @@ function supprimerItineraire() {
   if (routeControl) {
     map.removeControl(routeControl);
     routeControl = null;
-    alert("🗑️ Itinéraire supprimé.");
-  } else {
-    alert("⚠️ Aucun itinéraire actif.");
+    const info = document.getElementById("itineraireInfo");
+    if (info) info.textContent = "🚗 Aucune route tracée";
   }
 }
 
 /* ===========================================================
-   🧾 COMMANDES + MODIFICATIONS
+   🧾 COMMANDES + MODIFS CLIENTS
    =========================================================== */
 function commanderClient(livreurUid, clientId, nomClient) {
   const produit = prompt("Quel produit souhaite commander " + decodeURIComponent(nomClient) + " ?");
@@ -324,7 +334,7 @@ function commanderClient(livreurUid, clientId, nomClient) {
 
   db.ref(`commandes/${livreurUid}/${clientId}`).push(commande)
     .then(() => alert("✅ Commande enregistrée avec succès !"))
-    .catch(err => alert("❌ Erreur lors de la commande : " + err.message));
+    .catch(err => alert("❌ Erreur : " + err.message));
 }
 
 function renommerClient(livreurUid, id, oldName) {
@@ -343,7 +353,7 @@ function supprimerClient(livreurUid, id) {
 }
 
 /* ===========================================================
-   🔍 BARRE DE RECHERCHE CLIENTS
+   🔍 RECHERCHE CLIENTS (avec bouton ❌ et surbrillance)
    =========================================================== */
 function enableSearchClients() {
   const searchInput = document.getElementById("searchClient");
