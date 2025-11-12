@@ -67,7 +67,7 @@
   <!-- Controls -->
   <div id="controls">
     <div class="search-container">
-      <input id="searchInput" type="text" placeholder="?? Rechercher un client..." />
+      <input id="searchInput" type="text" placeholder="🔍 Rechercher un client..." />
       <button id="clearSearch">×</button>
     </div>
   </div>
@@ -97,9 +97,6 @@
     firebase.initializeApp(firebaseConfig);
   </script>
 
-  <!-- Script principal -->
-  <script src="/Hanafi-Map/app.js"></script>
-
   <!-- Affichage map après login -->
   <script>
     firebase.auth().onAuthStateChanged(function(user) {
@@ -116,6 +113,9 @@
       }
     });
   </script>
+
+  <!-- ✅ Script principal chargé en dernier (résout ton bug) -->
+  <script src="/Hanafi-Map/app.js"></script>
 
 </body>
 </html>
