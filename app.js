@@ -69,26 +69,16 @@ if (logoutBtn) {
   });
 }
 
-/* ---------- Déconnexion automatique après 10h ---------- */
-let autoLogoutTimer = null;
-
+/* ---------- Surveiller l'état d'authentification ---------- */
 firebase.auth().onAuthStateChanged(async user => {
   try {
     if (user) {
       currentUser = user;
-      console.log("✅ Connecté :", user.email);
+      console.log("? Connecté :", user.email);
       if (loginContainer) loginContainer.style.display = "none";
       if (logoutBtn) logoutBtn.style.display = "block";
       if (mapDiv) mapDiv.style.display = "block";
       if (controls) controls.style.display = "flex";
-
-      // --- DÉMARRAGE DU TIMER DE DÉCONNEXION AUTOMATIQUE ---
-      if (autoLogoutTimer) clearTimeout(autoLogoutTimer);
-      autoLogoutTimer = setTimeout(async () => {
-        console.warn("⏰ Session expirée — déconnexion automatique");
-        alert("Votre session a expiré après 10h d’utilisation.\nVous allez être déconnecté.");
-        try { await firebase.auth().signOut(); } catch(e) { console.warn(e); }
-      }, 10 * 60 * 60 * 1000); // 10 heures = 36 000 000 ms
 
       // initialise / réinitialise la carte
       initMap();
@@ -96,15 +86,9 @@ firebase.auth().onAuthStateChanged(async user => {
       // démarre géoloc + écoute clients
       startGeolocAndListen();
     } else {
-      console.log("❌ Déconnecté");
+      console.log("? Déconnecté");
       currentUser = null;
       cleanupAfterLogout();
-
-      // Stop le timer s’il existe
-      if (autoLogoutTimer) {
-        clearTimeout(autoLogoutTimer);
-        autoLogoutTimer = null;
-      }
     }
   } catch (e) {
     console.error("onAuthStateChanged error:", e);
@@ -113,6 +97,7 @@ firebase.auth().onAuthStateChanged(async user => {
 
 /* =================== MAP INIT (évite reuse error) =================== */
 function initMap() {
+  // retire map précédente proprement (évite "Map container is being reused")
   try {
     if (map) {
       map.remove();
@@ -123,8 +108,10 @@ function initMap() {
     map = null;
   }
 
+  // crée la nouvelle map
   map = L.map("map", { center: defaultCenter, zoom: defaultZoom });
 
+  // couches
   const normalTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap contributors"
   }).addTo(map);
@@ -133,9 +120,18 @@ function initMap() {
     subdomains: ["mt0","mt1","mt2","mt3"], maxZoom: 20
   });
 
+  // layers pour route et clients
   routeLayer = L.layerGroup().addTo(map);
   clientsLayer = L.layerGroup().addTo(map);
 
+  // crée le résumé d'itinéraire si absent
+  if (routeSummary) {
+    // nothing
+  } else if (routeSummary === null && document.getElementById("routeSummary")) {
+    // exists in DOM, ok
+  }
+
+  // clic droit: ajouter client pour utilisateur courant (admin peut modifier code)
   map.on("contextmenu", e => {
     if (!currentUser) return alert("Connecte-toi pour ajouter un client.");
     const nom = prompt("Nom du client :");
@@ -151,12 +147,16 @@ function initMap() {
     }
   });
 
+  // évite problème d'affichage initial quand map était cachée
   setTimeout(() => { try { map.invalidateSize(); } catch(_){} }, 250);
+
+  // ajoute boutons flottants
   createBottomButtons(normalTiles, satelliteTiles);
 }
 
 /* =================== GEOLOCALISATION + ECOUTE CLIENTS =================== */
 function startGeolocAndListen() {
+  // stop anciens watchers/listeners si existants
   if (geoWatchId !== null) {
     try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
     geoWatchId = null;
@@ -166,6 +166,7 @@ function startGeolocAndListen() {
     clientsRef = null;
   }
 
+  // première position rapide
   if ("geolocation" in navigator) {
     navigator.geolocation.getCurrentPosition(pos => {
       const { latitude: lat, longitude: lng } = pos.coords;
@@ -176,6 +177,7 @@ function startGeolocAndListen() {
       map.setView(defaultCenter, defaultZoom);
     }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 5000 });
 
+    // watch en continu
     geoWatchId = navigator.geolocation.watchPosition(pos => {
       const { latitude: lat, longitude: lng } = pos.coords;
       if (!userMarker) {
@@ -185,6 +187,7 @@ function startGeolocAndListen() {
         userMarker.setLatLng([lat, lng]);
       }
 
+      // n'écrit dans Firebase que si currentUser existe
       if (currentUser && currentUser.uid) {
         const path = `livreurs/${currentUser.uid}`;
         try {
@@ -199,6 +202,7 @@ function startGeolocAndListen() {
     console.warn("Géolocalisation non disponible");
   }
 
+  // écoute clients (clients/<uid>)
   if (!currentUser || !currentUser.uid) {
     console.warn("Utilisateur non défini — impossible d'écouter clients.");
     return;
@@ -209,7 +213,10 @@ function startGeolocAndListen() {
     clientsLayer.clearLayers();
     markers = [];
     const data = snap.val();
-    if (!data) return;
+    if (!data) {
+      // nothing
+      return;
+    }
     Object.entries(data).forEach(([id, c]) => {
       if (!c || typeof c.lat !== "number" || typeof c.lng !== "number") return;
       const marker = L.marker([c.lat, c.lng], { icon: clientIcon });
@@ -224,6 +231,7 @@ function startGeolocAndListen() {
 
 /* =================== POPUP CLIENT (complet) =================== */
 function popupClientHtml(livreurUid, id, c) {
+  // safe values
   const nom = escapeHtml(c.name || "Client");
   const safeLivreur = encodeURIComponent(livreurUid);
   const safeId = encodeURIComponent(id);
@@ -234,12 +242,258 @@ function popupClientHtml(livreurUid, id, c) {
       <b>${nom}</b><br>
       ${c.createdAt ? `<small style="color:#777">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br>` : ""}
       <div style="margin-top:8px;display:flex;gap:6px;flex-direction:column;">
-        <button onclick="calculerItineraire(${c.lat}, ${c.lng})" style="background:#0074FF;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">🧭 Itinéraire</button>
-        <button onclick="supprimerItineraire()" style="background:#6c757d;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">❌ Enlever itinéraire</button>
-        <button onclick="commanderClient('${safeLivreur}','${safeId}')" style="background:#FF9800;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">🛒 Passer commande</button>
-        ${canEdit ? `<button onclick="renommerClient('${safeId}')" style="background:#009688;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">✏️ Modifier</button>
-                     <button onclick="supprimerClient('${safeId}')" style="background:#e53935;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">🗑️ Supprimer</button>` : `<div style="font-size:12px;color:#777;padding-top:4px;">(Modification réservée)</div>`}
+        <button onclick="calculerItineraire(${c.lat}, ${c.lng})" style="background:#0074FF;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">?? Itinéraire</button>
+        <button onclick="supprimerItineraire()" style="background:#6c757d;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">? Enlever itinéraire</button>
+        <button onclick="commanderClient('${safeLivreur}','${safeId}')" style="background:#FF9800;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">?? Passer commande</button>
+        ${canEdit ? `<button onclick="renommerClient('${safeId}')" style="background:#009688;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">?? Modifier</button>
+                     <button onclick="supprimerClient('${safeId}')" style="background:#e53935;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">??? Supprimer</button>` : `<div style="font-size:12px;color:#777;padding-top:4px;">(Modification réservée)</div>`}
       </div>
     </div>
   `;
 }
+
+/* =================== Itinéraire via GraphHopper (affiche résumé sous la carte) =================== */
+async function calculerItineraire(destLat, destLng) {
+  // clear previous
+  try { routeLayer.clearLayers(); } catch(_) {}
+  if (!userMarker) return alert("Localisation en attente...");
+
+  const me = userMarker.getLatLng();
+  const infoDiv = document.getElementById("routeSummary");
+  if (infoDiv) {
+    infoDiv.style.display = "block";
+    infoDiv.textContent = "? Calcul en cours...";
+  }
+
+  try {
+    const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const path = data.paths?.[0];
+    if (!path) throw new Error("Aucun trajet trouvé");
+
+    // draw
+    const coords = (path.points && path.points.coordinates)
+      ? path.points.coordinates.map(p => [p[1], p[0]])
+      : [];
+
+    if (coords.length) {
+      routePolyline = L.polyline(coords, { color: "#0074FF", weight: 5, opacity: 0.95 }).addTo(routeLayer);
+      map.fitBounds(routePolyline.getBounds(), { padding: [60,60], maxZoom: 17 });
+    }
+
+    const distanceKm = (path.distance / 1000).toFixed(2);
+    const dureeMin = Math.round(path.time / 60000);
+    if (infoDiv) infoDiv.innerHTML = `?? <b>Distance</b> : ${distanceKm} km — ?? <b>Durée</b> : ${dureeMin} min`;
+  } catch (e) {
+    console.error("Erreur itinéraire :", e);
+    if (infoDiv) infoDiv.textContent = "? Impossible de calculer l'itinéraire.";
+    alert("Impossible de calculer l'itinéraire.");
+  }
+}
+
+function supprimerItineraire() {
+  try {
+    if (routeLayer) routeLayer.clearLayers();
+    if (routePolyline) routePolyline = null;
+    const infoDiv = document.getElementById("routeSummary");
+    if (infoDiv) { infoDiv.style.display = "none"; infoDiv.textContent = ""; }
+  } catch (e) {
+    console.warn("Erreur suppression itinéraire :", e);
+  }
+}
+
+/* =================== Commande / CRUD clients =================== */
+function commanderClient(livreurEnc, clientIdEnc) {
+  const livreurUid = decodeURIComponent(livreurEnc);
+  const clientId = decodeURIComponent(clientIdEnc);
+  const produit = prompt("Quel produit commander ?");
+  if (!produit) return;
+  const path = `commandes/${livreurUid}/${clientId}`;
+  try {
+    firebase.database().ref(path).push({
+      produit: produit.trim(),
+      date: new Date().toISOString(),
+      status: "en attente",
+      par: currentUser ? currentUser.uid : "anonymous"
+    });
+    alert("? Commande enregistrée");
+  } catch (e) {
+    console.warn("Erreur commande:", e);
+    alert("Erreur création commande (droits Firebase?).");
+  }
+}
+
+function renommerClient(clientIdEnc) {
+  const clientId = decodeURIComponent(clientIdEnc);
+  const nouveau = prompt("Nouveau nom :");
+  if (!nouveau) return;
+  if (!currentUser || !currentUser.uid) return alert("Utilisateur non connecté");
+  const path = `clients/${currentUser.uid}/${clientId}/name`;
+  firebase.database().ref(path).set(nouveau).then(() => alert("? Nom mis à jour")).catch(e => { console.warn(e); alert("Erreur (droits?)."); });
+}
+
+function supprimerClient(clientIdEnc) {
+  const clientId = decodeURIComponent(clientIdEnc);
+  if (!confirm("Supprimer définitivement ce client ?")) return;
+  if (!currentUser || !currentUser.uid) return alert("Utilisateur non connecté");
+  const path = `clients/${currentUser.uid}/${clientId}`;
+  firebase.database().ref(path).remove().then(()=> alert("? Client supprimé")).catch(e => { console.warn(e); alert("Erreur (droits?)."); });
+}
+
+/* =================== Recherche clients (avec bouton clear + surbrillance) =================== */
+function enableSearch() {
+  if (!searchInput || !clearSearchBtn) return;
+
+  function updateClearVisibility() {
+    clearSearchBtn.style.display = (searchInput.value && searchInput.value.trim() !== "") ? "block" : "none";
+  }
+
+  searchInput.addEventListener("input", e => {
+    const q = (e.target.value || "").trim().toLowerCase();
+    updateClearVisibility();
+    filterMarkers(q);
+  });
+
+  clearSearchBtn.addEventListener("click", () => {
+    searchInput.value = "";
+    updateClearVisibility();
+    filterMarkers("");
+  });
+
+  updateClearVisibility();
+}
+
+function filterMarkers(query) {
+  markers.forEach(m => {
+    const name = (m.clientName || "").toLowerCase();
+    const match = query === "" || name.includes(query);
+    // toggle layer
+    if (match) {
+      if (!clientsLayer.hasLayer(m)) clientsLayer.addLayer(m);
+    } else {
+      try { clientsLayer.removeLayer(m); } catch(_) {}
+    }
+
+    // highlight popup content by replacing <mark> in popup only when opened
+    const popupContent = m.getPopup()?.getContent?.() || "";
+    // We will not mutate popup stored HTML here (keeps original), instead update when opening:
+    m.off("popupopen");
+    m.on("popupopen", () => {
+      if (query && name.includes(query)) {
+        const regex = new RegExp(`(${escapeRegExp(query)})`, "ig");
+        const rawName = m.clientData?.name || "";
+        const highlighted = rawName.replace(regex, "<mark>$1</mark>");
+        // rebuild popup (keep same actions)
+        const c = m.clientData;
+        m.setPopupContent && m.setPopupContent(
+          `<div style="font-size:13px;max-width:260px;">
+            <b>${escapeHtml(highlighted)}</b><br>
+            ${c.createdAt ? `<small style="color:#777">Ajouté : ${new Date(c.createdAt).toLocaleString()}</small><br>` : ""}
+            <div style="margin-top:8px;display:flex;gap:6px;flex-direction:column;">
+              <button onclick="calculerItineraire(${c.lat}, ${c.lng})" style="background:#0074FF;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">?? Itinéraire</button>
+              <button onclick="supprimerItineraire()" style="background:#6c757d;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">? Enlever itinéraire</button>
+              <button onclick="commanderClient('${encodeURIComponent(currentUser.uid)}','${encodeURIComponent(m.clientDataId || "")}')" style="background:#FF9800;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;">?? Passer commande</button>
+            </div>
+          </div>`
+        );
+      }
+    });
+  });
+  // remove global marks from DOM (if any)
+  document.querySelectorAll("mark").forEach(n => n.style.background = "yellow");
+}
+
+function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/* =================== UTIL =================== */
+function escapeHtml(s) {
+  return (s||"").toString().replace(/[&<>"']/g,m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+/* =================== BOUTONS FLOTTANTS =================== */
+function createBottomButtons(normalTiles, satelliteTiles) {
+  if (!map || document.getElementById("mapButtons")) return;
+  const container = document.createElement("div");
+  container.id = "mapButtons";
+  container.style.position = "absolute";
+  container.style.bottom = "20px";
+  container.style.right = "20px";
+  container.style.zIndex = "2000";
+  container.style.display = "flex";
+  container.style.flexDirection = "column";
+  container.style.gap = "10px";
+
+  const btnStyle = `background:#007bff;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.2);`;
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.innerText = "??? Vue satellite";
+  toggleBtn.style.cssText = btnStyle;
+
+  const posBtn = document.createElement("button");
+  posBtn.innerText = "?? Ma position";
+  posBtn.style.cssText = btnStyle;
+
+  toggleBtn.addEventListener("click", () => {
+    if (!satelliteTiles) return;
+    if (map.hasLayer(satelliteTiles)) {
+      map.removeLayer(satelliteTiles);
+      toggleBtn.innerText = "??? Vue satellite";
+    } else {
+      satelliteTiles.addTo(map);
+      toggleBtn.innerText = "??? Vue normale";
+    }
+  });
+
+  posBtn.addEventListener("click", () => {
+    if (userMarker) map.setView(userMarker.getLatLng(), 15);
+    else alert("Localisation en cours...");
+  });
+
+  container.appendChild(toggleBtn);
+  container.appendChild(posBtn);
+  document.body.appendChild(container);
+}
+
+/* =================== CLEANUP après logout =================== */
+function cleanupAfterLogout() {
+  // UI
+  if (loginContainer) loginContainer.style.display = "block";
+  if (mapDiv) mapDiv.style.display = "none";
+  if (logoutBtn) logoutBtn.style.display = "none";
+  if (controls) controls.style.display = "none";
+
+  // stop geoloc
+  if (geoWatchId !== null) {
+    try { navigator.geolocation.clearWatch(geoWatchId); } catch(_) {}
+    geoWatchId = null;
+  }
+
+  // stop firebase listeners
+  if (clientsRef) {
+    try { clientsRef.off(); } catch(_) {}
+    clientsRef = null;
+  }
+
+  // clear map layers
+  try {
+    if (routeLayer) routeLayer.clearLayers();
+    if (clientsLayer) clientsLayer.clearLayers();
+    if (map) { map.remove(); map = null; }
+  } catch (e) {
+    console.warn("Cleanup map error:", e);
+  }
+
+  // hide route summary
+  if (routeSummary) { routeSummary.style.display = "none"; routeSummary.textContent = ""; }
+
+  // reset state
+  markers = [];
+  userMarker = null;
+  routePolyline = null;
+  currentUser = null;
+}
+
+/* =================== DÉMARRAGE : active la recherche si DOM OK =================== */
+enableSearch();
