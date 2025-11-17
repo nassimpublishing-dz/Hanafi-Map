@@ -5,7 +5,9 @@
   <title>Hanafi Livraison</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <link rel="manifest" href="/manifest.json" />
+  <!-- Lien vers le manifest CORRIGÉ -->
+  <link rel="manifest" href="/Hanafi-Map/manifest.json" />
+  <!-- Lien vers l'icône CORRIGÉ -->
   <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png" />
 
   <!-- Leaflet CSS -->
@@ -117,11 +119,12 @@
   <!-- ✅ Script principal chargé en dernier (résout ton bug) -->
   <script src="/Hanafi-Map/app.js"></script>
 
-  <!-- ✅ Enregistrement du Service Worker (ajouté pour PWA) -->
+  <!-- ✅ Enregistrement du Service Worker CORRIGÉ -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js')
+        // Note le /Hanafi-Map/ ajouté ici
+        navigator.serviceWorker.register('/Hanafi-Map/service-worker.js')
           .then(registration => {
             console.log('Service Worker enregistré avec succès:', registration);
           })
@@ -134,4 +137,3 @@
 
 </body>
 </html>
-
