@@ -1,6 +1,44 @@
 {
   "name": "Hanafi Livraison",
   "short_name": "HanafiMap",
+  "description": "Application de livraison pour livreurs Hanafi",
+  "start_url": "/Hanafi-Map/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#007bff",
+  "orientation": "portrait-primary",
+  "scope": "/Hanafi-Map/",
+  "icons": [
+    {
+      "src": "/Hanafi-Map/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/Hanafi-Map/icon-512.png",
+      "sizes": "512x512", 
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/Hanafi-Map/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/Hanafi-Map/screenshot-narrow.png", 
+      "sizes": "375x812",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ]
+}{
+  "name": "Hanafi Livraison",
+  "short_name": "HanafiMap",
   "start_url": "/Hanafi-Map/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -18,3 +56,4 @@
     }
   ]
 }
+
