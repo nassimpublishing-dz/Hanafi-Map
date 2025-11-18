@@ -3,15 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <title>Hanafi Livraison</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <!-- META PWA ESSENTIELLES -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#007bff">
+  <meta name="msapplication-TileColor" content="#007bff">
+  <meta name="description" content="Application de livraison pour livreurs Hanafi - Gestion des clients et itinéraires">
   
   <!-- CORRECTION : Ajout de la Permissions-Policy -->
   <meta http-equiv="Permissions-Policy" content="geolocation=(self)">
 
-  <!-- Lien vers le manifest CORRIGÉ -->
+  <!-- LIENS PWA -->
   <link rel="manifest" href="/Hanafi-Map/manifest.json" />
-  <!-- Lien vers l'icône CORRIGÉ -->
   <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png" />
+  <link rel="apple-touch-icon" href="/Hanafi-Map/icon-192.png">
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
