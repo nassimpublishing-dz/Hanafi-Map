@@ -1,54 +1,46 @@
-// Nom du cache
-const CACHE_NAME = 'hanafi-map-v2';
+// Nom du cache AVEC VERSION - changez le numéro de version
+const CACHE_NAME = 'hanafi-map-v3'; // ← Changez v2 en v3
 
-// Fichiers à mettre en cache (CHEMINS CORRIGÉS)
-const urlsToCache = [
-  '/Hanafi-Map/',
-  '/Hanafi-Map/index.html',
-  '/Hanafi-Map/manifest.json',
-  '/Hanafi-Map/service-worker.js',
-  '/Hanafi-Map/app.js',
-  '/Hanafi-Map/icon-192.png',
-  '/Hanafi-Map/icon-512.png',
-  '/Hanafi-Map/magasin-delectronique.png',
-  '/Hanafi-Map/camion-dexpedition.png'
-];
-
-// Installation AVEC GESTION D'ERREUR
+// Installation
 self.addEventListener('install', event => {
+  console.log('🔄 Service Worker installé - version NOUVELLE');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Cache ouvert, ajout des fichiers...');
-        return cache.addAll(urlsToCache);
+        console.log('📦 Mise en cache des nouvelles ressources');
+        return cache.addAll([
+          '/Hanafi-Map/',
+          '/Hanafi-Map/index.html',
+          '/Hanafi-Map/manifest.json',
+          '/Hanafi-Map/service-worker.js',
+          '/Hanafi-Map/app.js',
+          '/Hanafi-Map/icon-192.png',  // Nouvelle icône
+          '/Hanafi-Map/icon-512.png',  // Nouvelle icône
+          '/Hanafi-Map/favicon-32x32.ico',
+          '/Hanafi-Map/apple-icon-180x180.png',
+          '/Hanafi-Map/magasin-delectronique.png',
+          '/Hanafi-Map/camion-dexpedition.png'
+        ]);
       })
       .catch(error => {
-        console.log('Erreur cache:', error);
+        console.log('❌ Erreur cache:', error);
       })
   );
 });
 
-// Activation (reste identique)
+// Activation - SUPPRIME LES ANCIENS CACHES
 self.addEventListener('activate', event => {
+  console.log('🔥 Activation - suppression anciens caches');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames.map(cache => {
           if (cache !== CACHE_NAME) {
+            console.log('🗑️ Suppression cache:', cache);
             return caches.delete(cache);
           }
         })
       );
     })
-  );
-});
-
-// Interception des requêtes (reste identique)
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        return response || fetch(event.request);
-      })
   );
 });
