@@ -1,36 +1,34 @@
-// Nom du cache AVEC VERSION - changez le numéro de version
-const CACHE_NAME = 'hanafi-map-v3'; // ← Changez v2 en v3
+// Version FORCÉE - changez ce numéro
+const CACHE_NAME = 'hanafi-map-v4';
+
+// Fichiers à mettre en cache AVEC NOUVEAUX NOMS
+const urlsToCache = [
+  '/Hanafi-Map/',
+  '/Hanafi-Map/index.html',
+  '/Hanafi-Map/manifest.json',
+  '/Hanafi-Map/service-worker.js',
+  '/Hanafi-Map/app.js',
+  '/Hanafi-Map/icon-192-new.png',  // NOUVELLE ICÔNE
+  '/Hanafi-Map/icon-512-new.png',  // NOUVELLE ICÔNE
+  '/Hanafi-Map/favicon-32x32.ico',
+  '/Hanafi-Map/apple-icon-180x180.png',
+  '/Hanafi-Map/magasin-delectronique.png',
+  '/Hanafi-Map/camion-dexpedition.png'
+];
 
 // Installation
 self.addEventListener('install', event => {
-  console.log('🔄 Service Worker installé - version NOUVELLE');
+  console.log('🔄 Installation nouvelle version');
+  self.skipWaiting(); // FORCE l'activation immédiate
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('📦 Mise en cache des nouvelles ressources');
-        return cache.addAll([
-          '/Hanafi-Map/',
-          '/Hanafi-Map/index.html',
-          '/Hanafi-Map/manifest.json',
-          '/Hanafi-Map/service-worker.js',
-          '/Hanafi-Map/app.js',
-          '/Hanafi-Map/icon-192-new.png',
-          '/Hanafi-Map/icon-512-new.png',
-          '/Hanafi-Map/favicon-32x32.ico',
-          '/Hanafi-Map/apple-icon-180x180.png',
-          '/Hanafi-Map/magasin-delectronique.png',
-          '/Hanafi-Map/camion-dexpedition.png'
-        ]);
-      })
-      .catch(error => {
-        console.log('❌ Erreur cache:', error);
-      })
+      .then(cache => cache.addAll(urlsToCache))
   );
 });
 
-// Activation - SUPPRIME LES ANCIENS CACHES
+// Activation AGGRESSIVE
 self.addEventListener('activate', event => {
-  console.log('🔥 Activation - suppression anciens caches');
+  console.log('🔥 Activation forcée');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -41,7 +39,17 @@ self.addEventListener('activate', event => {
           }
         })
       );
+    }).then(() => {
+      // FORCE tous les clients à se mettre à jour
+      return self.clients.claim();
     })
   );
 });
 
+// Interception
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => response || fetch(event.request))
+  );
+});
