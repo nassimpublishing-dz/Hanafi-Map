@@ -14,8 +14,8 @@ self.addEventListener('install', event => {
           '/Hanafi-Map/manifest.json',
           '/Hanafi-Map/service-worker.js',
           '/Hanafi-Map/app.js',
-          '/Hanafi-Map/icon-192.png',  // Nouvelle icône
-          '/Hanafi-Map/icon-512.png',  // Nouvelle icône
+          '/Hanafi-Map/icon-192-new.png',
+          '/Hanafi-Map/icon-512-new.png',
           '/Hanafi-Map/favicon-32x32.ico',
           '/Hanafi-Map/apple-icon-180x180.png',
           '/Hanafi-Map/magasin-delectronique.png',
@@ -44,3 +44,4 @@ self.addEventListener('activate', event => {
     })
   );
 });
+
