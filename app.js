@@ -1,6 +1,5 @@
 /* ===========================================================
-   app.js — Version finale (Firebase v8) — stable & robuste
-   Compatible avec l'index.html fourni
+   app.js — Version avec recalcul automatique d'itinéraire
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
@@ -30,7 +29,13 @@ let markers = [];
 let geoWatchId = null;
 let clientsRef = null;
 let currentUser = null;
-let destination = null; // ← NOUVEAU : Stocke la destination actuelle
+let destination = null;
+let lastRouteUpdate = 0;
+let routeRecalculationInterval = null; // ← NOUVEAU : Intervalle de recalcul
+
+/* ---------- CONSTANTES DE RECALCUL ---------- */
+const ROUTE_UPDATE_DISTANCE_THRESHOLD = 50; // ← Seuil de déviation en mètres
+const ROUTE_UPDATE_TIME_THRESHOLD = 30000;  // ← Temps minimum entre recalculs (30s)
 
 /* ---------- AJOUT : TIMER DÉCONNEXION AUTO ---------- */
 let autoLogoutTimer = null;
@@ -153,7 +158,7 @@ function initMap() {
 }
 
 /* ===========================================================
-   GÉOLOCALISATION + CLIENTS - CORRIGÉE
+   GÉOLOCALISATION + CLIENTS - AVEC DÉTECTION DE DÉVIATION
    =========================================================== */
 function startGeolocAndListen() {
   if (geoWatchId !== null) {
@@ -179,7 +184,7 @@ function startGeolocAndListen() {
       maximumAge: 0
     });
 
-    // Surveillance en temps réel - CORRIGÉ
+    // Surveillance en temps réel avec détection de déviation
     geoWatchId = navigator.geolocation.watchPosition(
       pos => {
         const { latitude: lat, longitude: lng } = pos.coords;
@@ -196,9 +201,9 @@ function startGeolocAndListen() {
       },
       errorHandler,
       {
-        enableHighAccuracy: true,   // ← GPS haute précision
-        timeout: 15000,            // ← Timeout plus long
-        maximumAge: 0              // ← IMPORTANT : Pas de cache
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
       }
     );
   }
@@ -223,7 +228,7 @@ function startGeolocAndListen() {
 }
 
 /* ===========================================================
-   FONCTION DE MISE À JOUR POSITION - NOUVELLE
+   FONCTION DE MISE À JOUR POSITION AVEC DÉTECTION DÉVIATION
    =========================================================== */
 function updateUserPosition(lat, lng) {
   if (!userMarker) {
@@ -234,26 +239,179 @@ function updateUserPosition(lat, lng) {
     userMarker.setLatLng([lat, lng]);
   }
 
-  // Recentrer légèrement la carte sur la nouvelle position
+  // Vérifier si on s'est éloigné de l'itinéraire
+  if (destination && routePolyline) {
+    checkRouteDeviation([lat, lng]);
+  }
+
+  // Recentrer légèrement la carte
   if (map && userMarker) {
     const currentCenter = map.getCenter();
     const newLatLng = [lat, lng];
-    
-    // Recentrer seulement si on s'est éloigné de plus de 50m
     const distance = map.distance(currentCenter, newLatLng);
     if (distance > 50) {
       map.setView(newLatLng, map.getZoom());
     }
   }
+}
 
-  // Recalculer l'itinéraire si une destination est active
-  if (destination && routePolyline) {
-    updateRoute([lat, lng], destination);
+/* ===========================================================
+   DÉTECTION DE DÉVIATION DE L'ITINÉRAIRE - NOUVELLE
+   =========================================================== */
+function checkRouteDeviation(currentPosition) {
+  if (!routePolyline || !destination) return;
+
+  // Vérifier la distance par rapport à la ligne de l'itinéraire
+  const routeLatLngs = routePolyline.getLatLngs();
+  let minDistance = Infinity;
+
+  // Trouver la distance minimale entre la position actuelle et l'itinéraire
+  for (let i = 0; i < routeLatLngs.length - 1; i++) {
+    const segmentStart = routeLatLngs[i];
+    const segmentEnd = routeLatLngs[i + 1];
+    const distance = distanceToSegment(currentPosition, segmentStart, segmentEnd);
+    if (distance < minDistance) {
+      minDistance = distance;
+    }
+  }
+
+  // Vérifier aussi la distance jusqu'à la destination
+  const distanceToDestination = map.distance(currentPosition, destination);
+  const timeSinceLastUpdate = Date.now() - lastRouteUpdate;
+
+  // Conditions pour recalculer l'itinéraire
+  const shouldRecalculate = 
+    minDistance > ROUTE_UPDATE_DISTANCE_THRESHOLD && 
+    timeSinceLastUpdate > ROUTE_UPDATE_TIME_THRESHOLD;
+
+  if (shouldRecalculate) {
+    console.log(`🔄 Déviation détectée: ${minDistance.toFixed(1)}m - Recalcul de l'itinéraire...`);
+    recalculateRoute(currentPosition, destination);
   }
 }
 
 /* ===========================================================
-   GESTION DES ERREURS GPS - NOUVELLE
+   CALCUL DISTANCE À UN SEGMENT - NOUVELLE
+   =========================================================== */
+function distanceToSegment(point, segmentStart, segmentEnd) {
+  // Formule de distance point-segment
+  const A = point[0] - segmentStart.lat;
+  const B = point[1] - segmentStart.lng;
+  const C = segmentEnd.lat - segmentStart.lat;
+  const D = segmentEnd.lng - segmentStart.lng;
+
+  const dot = A * C + B * D;
+  const lenSq = C * C + D * D;
+  let param = -1;
+
+  if (lenSq !== 0) {
+    param = dot / lenSq;
+  }
+
+  let xx, yy;
+
+  if (param < 0) {
+    xx = segmentStart.lat;
+    yy = segmentStart.lng;
+  } else if (param > 1) {
+    xx = segmentEnd.lat;
+    yy = segmentEnd.lng;
+  } else {
+    xx = segmentStart.lat + param * C;
+    yy = segmentStart.lng + param * D;
+  }
+
+  const dx = point[0] - xx;
+  const dy = point[1] - yy;
+  
+  return Math.sqrt(dx * dx + dy * dy) * 111319.9; // Conversion en mètres
+}
+
+/* ===========================================================
+   RECALCUL AUTOMATIQUE DE L'ITINÉRAIRE - NOUVELLE
+   =========================================================== */
+async function recalculateRoute(start, end) {
+  if (!start || !end) return;
+
+  lastRouteUpdate = Date.now();
+  
+  const infoDiv = document.getElementById("routeSummary");
+  infoDiv.innerHTML = "🔄 <b>Adaptation de l'itinéraire...</b>";
+
+  try {
+    const url = `https://graphhopper.com/api/1/route?point=${start[0]},${start[1]}&point=${end[0]},${end[1]}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const path = data.paths?.[0];
+    
+    if (!path) throw new Error("Aucun itinéraire trouvé");
+
+    // Mettre à jour la polyligne
+    const coords = path.points.coordinates.map(p => [p[1], p[0]]);
+    routePolyline.setLatLngs(coords);
+
+    // Mettre à jour les informations
+    const km = (path.distance / 1000).toFixed(2);
+    const min = Math.round(path.time / 60000);
+
+    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 🔄 <b>Itinéraire adapté</b>`;
+
+    // Afficher une notification
+    showTempNotification("🔄 Itinéraire recalculé !", 3000);
+    
+  } catch (error) {
+    console.error("Erreur recalcul itinéraire:", error);
+    infoDiv.innerHTML = "❌ <b>Erreur de recalcul</b> - Restez sur l'itinéraire principal";
+  }
+}
+
+/* ===========================================================
+   NOTIFICATION TEMPORAIRE - NOUVELLE
+   =========================================================== */
+function showTempNotification(message, duration = 3000) {
+  // Créer l'élément de notification
+  const notification = document.createElement("div");
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #007bff;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    z-index: 10000;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: slideDown 0.3s ease-out;
+  `;
+  
+  notification.textContent = message;
+  document.body.appendChild(notification);
+
+  // Ajouter l'animation CSS
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideDown {
+      from { top: -50px; opacity: 0; }
+      to { top: 20px; opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Supprimer après la durée spécifiée
+  setTimeout(() => {
+    notification.style.animation = 'slideUp 0.3s ease-in';
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, duration);
+}
+
+/* ===========================================================
+   GESTION DES ERREURS GPS
    =========================================================== */
 function errorHandler(error) {
   console.warn('Erreur GPS:', error);
@@ -295,14 +453,15 @@ function popupClientHtml(uid, id, c) {
 }
 
 /* ===========================================================
-   ITINÉRAIRES - AMÉLIORÉ
+   ITINÉRAIRES - AMÉLIORÉ AVEC SUIVI AUTOMATIQUE
    =========================================================== */
 async function calculerItineraire(destLat, destLng) {
   routeLayer.clearLayers();
   if (!userMarker) return alert("📍 Localisation en attente...");
 
   const me = userMarker.getLatLng();
-  destination = [destLat, destLng]; // ← Stocker la destination
+  destination = [destLat, destLng];
+  lastRouteUpdate = Date.now();
   
   const infoDiv = document.getElementById("routeSummary");
   infoDiv.style.display = "block";
@@ -328,7 +487,11 @@ async function calculerItineraire(destLat, destLng) {
     const km = (path.distance / 1000).toFixed(2);
     const min = Math.round(path.time / 60000);
 
-    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 📍 <b>Navigation active</b>`;
+    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 📍 <b>Navigation active avec recalcul automatique</b>`;
+
+    // Démarrer la surveillance de déviation
+    startRouteMonitoring();
+
   } catch (error) {
     console.error("Erreur itinéraire:", error);
     infoDiv.textContent = "❌ Impossible de calculer l'itinéraire. Vérifiez votre connexion.";
@@ -336,7 +499,25 @@ async function calculerItineraire(destLat, destLng) {
 }
 
 /* ===========================================================
-   MISE À JOUR ITINÉRAIRE - NOUVELLE
+   SURVEILLANCE DE L'ITINÉRAIRE - NOUVELLE
+   =========================================================== */
+function startRouteMonitoring() {
+  // S'assurer qu'aucun intervalle précédent n'est actif
+  if (routeRecalculationInterval) {
+    clearInterval(routeRecalculationInterval);
+  }
+  
+  // Vérifier périodiquement la position (toutes les 10 secondes)
+  routeRecalculationInterval = setInterval(() => {
+    if (userMarker && destination) {
+      const currentPos = userMarker.getLatLng();
+      checkRouteDeviation([currentPos.lat, currentPos.lng]);
+    }
+  }, 10000);
+}
+
+/* ===========================================================
+   MISE À JOUR ITINÉRAIRE MANUELLE
    =========================================================== */
 async function updateRoute(start, end) {
   if (!routePolyline) return;
@@ -351,10 +532,9 @@ async function updateRoute(start, end) {
       const coords = path.points.coordinates.map(p => [p[1], p[0]]);
       routePolyline.setLatLngs(coords);
       
-      // Mettre à jour les informations
       const km = (path.distance / 1000).toFixed(2);
       const min = Math.round(path.time / 60000);
-      routeSummary.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 📍 <b>Navigation active</b>`;
+      routeSummary.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 🔄 <b>Itinéraire mis à jour</b>`;
     }
   } catch (error) {
     console.log("Erreur mise à jour itinéraire:", error);
@@ -364,7 +544,14 @@ async function updateRoute(start, end) {
 function supprimerItineraire() {
   if (routeLayer) routeLayer.clearLayers();
   routePolyline = null;
-  destination = null; // ← Réinitialiser la destination
+  destination = null;
+  
+  // Arrêter la surveillance
+  if (routeRecalculationInterval) {
+    clearInterval(routeRecalculationInterval);
+    routeRecalculationInterval = null;
+  }
+  
   routeSummary.style.display = "none";
   routeSummary.textContent = "";
 }
@@ -492,6 +679,12 @@ function cleanupAfterLogout() {
   if (clientsRef) clientsRef.off();
   clientsRef = null;
 
+  // Arrêter la surveillance d'itinéraire
+  if (routeRecalculationInterval) {
+    clearInterval(routeRecalculationInterval);
+    routeRecalculationInterval = null;
+  }
+
   if (routeLayer) routeLayer.clearLayers();
   if (clientsLayer) clientsLayer.clearLayers();
 
@@ -500,7 +693,7 @@ function cleanupAfterLogout() {
   markers = [];
   userMarker = null;
   routePolyline = null;
-  destination = null; // ← Nettoyer la destination
+  destination = null;
 
   routeSummary.style.display = "none";
   routeSummary.textContent = "";
