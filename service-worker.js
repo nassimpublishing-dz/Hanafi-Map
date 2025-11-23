@@ -1,55 +1,105 @@
-// Version FORCÉE - changez ce numéro
-const CACHE_NAME = 'hanafi-map-v4';
-
-// Fichiers à mettre en cache AVEC NOUVEAUX NOMS
+const CACHE_NAME = 'hanafi-v3';
 const urlsToCache = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  
+  // Chemins relatifs de base
   '/Hanafi-Map/',
   '/Hanafi-Map/index.html',
   '/Hanafi-Map/manifest.json',
-  '/Hanafi-Map/service-worker.js',
+  
+  // CSS et JS - seulement les fichiers existants
+  '/Hanafi-Map/styles.css',
   '/Hanafi-Map/app.js',
-  '/Hanafi-Map/icon-192-new.png',  // NOUVELLE ICÔNE
-  '/Hanafi-Map/icon-512-new.png',  // NOUVELLE ICÔNE
-  '/Hanafi-Map/favicon-32x32.ico',
-  '/Hanafi-Map/apple-icon-180x180.png',
+  
+  // Icones - seulement si elles existent
+  '/Hanafi-Map/icon-192.png',
+  '/Hanafi-Map/icon-512.png',
+  '/Hanafi-Map/favicon.ico',
   '/Hanafi-Map/magasin-delectronique.png',
   '/Hanafi-Map/camion-dexpedition.png'
 ];
 
-// Installation
+// Installation avec gestion d'erreurs
 self.addEventListener('install', event => {
-  console.log('🔄 Installation nouvelle version');
-  self.skipWaiting(); // FORCE l'activation immédiate
+  console.log('🔄 Installation nouvelle version du cache');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+      .then(cache => {
+        console.log('📦 Ouverture du cache');
+        return cache.addAll(urlsToCache)
+          .then(() => {
+            console.log('✅ Toutes les ressources mises en cache');
+          })
+          .catch(error => {
+            console.warn('⚠️ Certaines ressources non mises en cache:', error);
+            // Continuer même si certaines ressources échouent
+            return cache.add('/').catch(e => console.error('Même / a échoué:', e));
+          });
+      })
   );
 });
 
-// Activation AGGRESSIVE
+// Fetch avec fallback
+self.addEventListener('fetch', event => {
+  // Ne pas intercepter les requêtes GraphHopper
+  if (event.request.url.includes('graphhopper.com')) {
+    return;
+  }
+  
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => {
+        // Retourne le cache ou fetch réseau
+        if (response) {
+          return response;
+        }
+        
+        // Cloner la requête car elle ne peut être utilisée qu'une fois
+        const fetchRequest = event.request.clone();
+        
+        return fetch(fetchRequest)
+          .then(response => {
+            // Vérifier si la réponse est valide
+            if (!response || response.status !== 200 || response.type !== 'basic') {
+              return response;
+            }
+            
+            // Cloner la réponse pour la mettre en cache
+            const responseToCache = response.clone();
+            
+            caches.open(CACHE_NAME)
+              .then(cache => {
+                cache.put(event.request, responseToCache);
+              });
+            
+            return response;
+          })
+          .catch(error => {
+            console.warn('🌐 Erreur réseau, retour au cache:', error);
+            // Fallback pour la page d'accueil si tout échoue
+            if (event.request.mode === 'navigate') {
+              return caches.match('/');
+            }
+          });
+      })
+  );
+});
+
+// Activation et nettoyage des anciens caches
 self.addEventListener('activate', event => {
-  console.log('🔥 Activation forcée');
+  console.log('✨ Service Worker activé');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheNames.map(cache => {
-          if (cache !== CACHE_NAME) {
-            console.log('🗑️ Suppression cache:', cache);
-            return caches.delete(cache);
+        cacheNames.map(cacheName => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('🗑️ Suppression ancien cache:', cacheName);
+            return caches.delete(cacheName);
           }
         })
       );
-    }).then(() => {
-      // FORCE tous les clients à se mettre à jour
-      return self.clients.claim();
     })
-  );
-});
-
-// Interception
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => response || fetch(event.request))
   );
 });
