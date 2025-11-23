@@ -30,6 +30,7 @@ let markers = [];
 let geoWatchId = null;
 let clientsRef = null;
 let currentUser = null;
+let destination = null; // ← NOUVEAU : Stocke la destination actuelle
 
 /* ---------- AJOUT : TIMER DÉCONNEXION AUTO ---------- */
 let autoLogoutTimer = null;
@@ -152,7 +153,7 @@ function initMap() {
 }
 
 /* ===========================================================
-   GÉOLOCALISATION + CLIENTS
+   GÉOLOCALISATION + CLIENTS - CORRIGÉE
    =========================================================== */
 function startGeolocAndListen() {
   if (geoWatchId !== null) {
@@ -165,21 +166,41 @@ function startGeolocAndListen() {
   }
 
   if ("geolocation" in navigator) {
+    // Position initiale
     navigator.geolocation.getCurrentPosition(pos => {
       const { latitude: lat, longitude: lng } = pos.coords;
-      if (!userMarker) userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
+      if (!userMarker) {
+        userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
+      }
       map.setView([lat, lng], 15);
+    }, errorHandler, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
     });
 
-    geoWatchId = navigator.geolocation.watchPosition(pos => {
-      const { latitude: lat, longitude: lng } = pos.coords;
-
-      if (!userMarker) userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
-      else userMarker.setLatLng([lat, lng]);
-
-      if (currentUser)
-        firebase.database().ref(`livreurs/${currentUser.uid}`).set({ lat, lng, updatedAt: Date.now() });
-    });
+    // Surveillance en temps réel - CORRIGÉ
+    geoWatchId = navigator.geolocation.watchPosition(
+      pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        updateUserPosition(lat, lng);
+        
+        // Mettre à jour Firebase
+        if (currentUser) {
+          firebase.database().ref(`livreurs/${currentUser.uid}`).set({ 
+            lat, 
+            lng, 
+            updatedAt: Date.now() 
+          });
+        }
+      },
+      errorHandler,
+      {
+        enableHighAccuracy: true,   // ← GPS haute précision
+        timeout: 15000,            // ← Timeout plus long
+        maximumAge: 0              // ← IMPORTANT : Pas de cache
+      }
+    );
   }
 
   clientsRef = firebase.database().ref(`clients/${currentUser.uid}`);
@@ -199,6 +220,56 @@ function startGeolocAndListen() {
       markers.push(marker);
     });
   });
+}
+
+/* ===========================================================
+   FONCTION DE MISE À JOUR POSITION - NOUVELLE
+   =========================================================== */
+function updateUserPosition(lat, lng) {
+  if (!userMarker) {
+    userMarker = L.marker([lat, lng], { icon: livreurIcon })
+      .addTo(map)
+      .bindPopup("📍 Votre position actuelle");
+  } else {
+    userMarker.setLatLng([lat, lng]);
+  }
+
+  // Recentrer légèrement la carte sur la nouvelle position
+  if (map && userMarker) {
+    const currentCenter = map.getCenter();
+    const newLatLng = [lat, lng];
+    
+    // Recentrer seulement si on s'est éloigné de plus de 50m
+    const distance = map.distance(currentCenter, newLatLng);
+    if (distance > 50) {
+      map.setView(newLatLng, map.getZoom());
+    }
+  }
+
+  // Recalculer l'itinéraire si une destination est active
+  if (destination && routePolyline) {
+    updateRoute([lat, lng], destination);
+  }
+}
+
+/* ===========================================================
+   GESTION DES ERREURS GPS - NOUVELLE
+   =========================================================== */
+function errorHandler(error) {
+  console.warn('Erreur GPS:', error);
+  switch(error.code) {
+    case error.PERMISSION_DENIED:
+      alert("❌ GPS refusé. Activez la localisation dans les paramètres de votre navigateur.");
+      break;
+    case error.POSITION_UNAVAILABLE:
+      console.log("Position indisponible - vérifiez votre connexion GPS");
+      break;
+    case error.TIMEOUT:
+      console.log("Timeout GPS - réessai en cours...");
+      break;
+    default:
+      console.log("Erreur GPS inconnue:", error.message);
+  }
 }
 
 /* ===========================================================
@@ -224,13 +295,15 @@ function popupClientHtml(uid, id, c) {
 }
 
 /* ===========================================================
-   ITINÉRAIRES
+   ITINÉRAIRES - AMÉLIORÉ
    =========================================================== */
 async function calculerItineraire(destLat, destLng) {
   routeLayer.clearLayers();
-  if (!userMarker) return alert("Localisation en attente...");
+  if (!userMarker) return alert("📍 Localisation en attente...");
 
   const me = userMarker.getLatLng();
+  destination = [destLat, destLng]; // ← Stocker la destination
+  
   const infoDiv = document.getElementById("routeSummary");
   infoDiv.style.display = "block";
   infoDiv.textContent = "⏳ Calcul en cours...";
@@ -240,25 +313,58 @@ async function calculerItineraire(destLat, destLng) {
     const res = await fetch(url);
     const data = await res.json();
     const path = data.paths?.[0];
-    if (!path) throw new Error();
+    if (!path) throw new Error("Aucun itinéraire trouvé");
 
     const coords = path.points.coordinates.map(p => [p[1], p[0]]);
     routePolyline = L.polyline(coords, { color: "#0074FF", weight: 5 }).addTo(routeLayer);
+
+    // Ajouter le point de destination
+    L.marker([destLat, destLng], { icon: clientIcon })
+      .addTo(routeLayer)
+      .bindPopup("🎯 Destination");
 
     map.fitBounds(routePolyline.getBounds(), { padding: [50, 50], maxZoom: 17 });
 
     const km = (path.distance / 1000).toFixed(2);
     const min = Math.round(path.time / 60000);
 
-    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min`;
-  } catch {
-    infoDiv.textContent = "❌ Impossible de calculer l'itinéraire.";
+    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 📍 <b>Navigation active</b>`;
+  } catch (error) {
+    console.error("Erreur itinéraire:", error);
+    infoDiv.textContent = "❌ Impossible de calculer l'itinéraire. Vérifiez votre connexion.";
+  }
+}
+
+/* ===========================================================
+   MISE À JOUR ITINÉRAIRE - NOUVELLE
+   =========================================================== */
+async function updateRoute(start, end) {
+  if (!routePolyline) return;
+  
+  try {
+    const url = `https://graphhopper.com/api/1/route?point=${start[0]},${start[1]}&point=${end[0]},${end[1]}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const path = data.paths?.[0];
+    
+    if (path) {
+      const coords = path.points.coordinates.map(p => [p[1], p[0]]);
+      routePolyline.setLatLngs(coords);
+      
+      // Mettre à jour les informations
+      const km = (path.distance / 1000).toFixed(2);
+      const min = Math.round(path.time / 60000);
+      routeSummary.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 📍 <b>Navigation active</b>`;
+    }
+  } catch (error) {
+    console.log("Erreur mise à jour itinéraire:", error);
   }
 }
 
 function supprimerItineraire() {
   if (routeLayer) routeLayer.clearLayers();
   routePolyline = null;
+  destination = null; // ← Réinitialiser la destination
   routeSummary.style.display = "none";
   routeSummary.textContent = "";
 }
@@ -362,7 +468,7 @@ function createBottomButtons(normalTiles, satelliteTiles) {
   });
 
   posBtn.addEventListener("click", () => {
-    if (userMarker) map.setView(userMarker.getLatLng(), 15);
+    if (userMarker) map.setView(userMarker.getLatLng(), 16);
     else alert("Localisation en cours...");
   });
 
@@ -394,6 +500,7 @@ function cleanupAfterLogout() {
   markers = [];
   userMarker = null;
   routePolyline = null;
+  destination = null; // ← Nettoyer la destination
 
   routeSummary.style.display = "none";
   routeSummary.textContent = "";
