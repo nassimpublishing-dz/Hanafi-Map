@@ -1,148 +1,370 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Hanafi Livraison</title>
-  
-  <!-- META PWA ESSENTIELLES -->
-  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#007bff">
-  <meta name="msapplication-TileColor" content="#007bff">
-  <meta name="description" content="Application de livraison pour livreurs Hanafi - Gestion des clients et itinéraires">
-  
-  <!-- CORRECTION : Ajout de la Permissions-Policy -->
-  <meta http-equiv="Permissions-Policy" content="geolocation=(self)">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hanafi Livraison</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Styles pour la bannière d'installation -->
+    <style>
+        #installBanner {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+            z-index: 10000;
+            display: none;
+        }
+        
+        #installBanner button {
+            background: white;
+            color: #007bff;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 10px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        #installBanner .close {
+            background: transparent;
+            color: white;
+            border: 1px solid white;
+        }
+        
+        .install-icon {
+            font-size: 24px;
+            margin-right: 10px;
+        }
 
-  <!-- LIENS PWA AVEC CHEMINS CORRIGÉS -->
-  <link rel="manifest" href="/Hanafi-Map/manifest.json" />
-  <link rel="icon" href="/Hanafi-Map/favicon.ico" type="image/x-icon">
-  <link rel="apple-touch-icon" href="/Hanafi-Map/apple-touch-icon.png">
-  <link rel="icon" href="/Hanafi-Map/icon-192.png" sizes="192x192" type="image/png" />
+        /* Styles existants de votre app */
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
 
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+        .container {
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
 
-  <style>
-    body, html { margin:0; padding:0; height:100%; font-family:Arial,sans-serif; background:#f0f2f5; }
-    #map { width:100%; height:100vh; display:none; }
-    #loginContainer {
-      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-      background:white; padding:30px 40px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.2);
-      text-align:center; width:280px;
-    }
-    #loginContainer h2 { margin-bottom:20px; color:#007bff; }
-    #loginContainer input { display:block; width:100%; margin-bottom:12px; padding:10px; border:1px solid #ccc; border-radius:6px; font-size:14px; }
-    #loginBtn { background:#007bff;color:#fff;border:none;padding:10px;width:100%;border-radius:6px; cursor:pointer; font-weight:bold; }
-    #loginBtn:hover { background:#0056b3; }
-    #loginError { color:red; font-size:13px; margin-top:8px; }
-    #logoutBtn {
-      position:absolute; top:10px; right:10px; z-index:9999;
-      display:none; background:#dc3545;color:#fff;border:none;padding:8px 12px;border-radius:6px; cursor:pointer; font-weight:bold;
-    }
-    #logoutBtn:hover { background:#b52a36; }
-    #controls {
-      position:absolute; top:10px; left:10px; z-index:9999;
-      display:none; flex-direction:column; gap:8px;
-    }
-    .search-container { position:relative; width:220px; }
-    #searchInput { width:100%; padding:8px 30px 8px 8px; border:2px solid #007bff; border-radius:6px; font-size:14px; }
-    #clearSearch {
-      position:absolute; right:8px; top:50%; transform:translateY(-50%);
-      background:#ccc; border:none; border-radius:50%; width:20px; height:20px; font-weight:bold; color:#333; cursor:pointer; display:none;
-    }
-    #routeSummary {
-      display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:99999;
-      background:rgba(0,0,0,0.75); color:#fff; padding:10px 14px; border-radius:10px;
-      font-weight:600; font-size:14px;
-    }
-  </style>
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+            display: none;
+        }
+
+        #controls {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            z-index: 1000;
+            display: none;
+            gap: 10px;
+        }
+
+        #searchInput {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+        }
+
+        #clearSearch {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            display: none;
+        }
+
+        #routeSummary {
+            position: fixed;
+            top: 60px;
+            left: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 999;
+            display: none;
+        }
+
+        #logoutBtn {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            z-index: 1001;
+            display: none;
+        }
+
+        #logoutBtn:hover {
+            background: #c82333;
+        }
+
+        .error {
+            color: #dc3545;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
 </head>
 <body>
-
-  <!-- Login -->
-  <div id="loginContainer">
-    <h2>Connexion Livreur</h2>
-    <input id="email" type="email" placeholder="Email" />
-    <input id="password" type="password" placeholder="Mot de passe" />
-    <button id="loginBtn">Se connecter</button>
-    <p id="loginError"></p>
-  </div>
-
-  <!-- Carte -->
-  <div id="map"></div>
-
-  <!-- Logout -->
-  <button id="logoutBtn">Se déconnecter</button>
-
-  <!-- Controls -->
-  <div id="controls">
-    <div class="search-container">
-      <input id="searchInput" type="text" placeholder="🔍 Rechercher un client..." />
-      <button id="clearSearch">×</button>
+    <!-- Bannière d'installation APK -->
+    <div id="installBanner">
+        <div>
+            <span class="install-icon">📱</span>
+            <strong>Installer l'application Hanafi Livraison</strong>
+            <br>
+            <small>Pour une meilleure expérience et utilisation hors ligne</small>
+        </div>
+        <div style="margin-top: 10px;">
+            <button id="installButton">✅ Installer</button>
+            <button id="closeBanner" class="close">❌ Plus tard</button>
+        </div>
     </div>
-  </div>
 
-  <div id="routeSummary"></div>
+    <!-- Votre contenu existant -->
+    <div id="loginContainer" class="container">
+        <h2 style="text-align: center; color: #333;">Hanafi Livraison</h2>
+        <input type="email" id="email" placeholder="Email" required>
+        <input type="password" id="password" placeholder="Mot de passe" required>
+        <button id="loginBtn">Se connecter</button>
+        <div id="loginError" class="error"></div>
+    </div>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <div id="map"></div>
 
-  <!-- Firebase SDK v8 -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <div id="controls">
+        <input type="text" id="searchInput" placeholder="🔍 Rechercher un client...">
+        <button id="clearSearch">✕</button>
+    </div>
 
-  <!-- Configuration Firebase -->
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyAtDTNbi_vMSrtHpHigy00quXOLXyGnQ9c",
-      authDomain: "hanafi-livraison.firebaseapp.com",
-      databaseURL: "https://hanafi-livraison-default-rtdb.firebaseio.com",
-      projectId: "hanafi-livraison",
-      storageBucket: "hanafi-livraison.firebasestorage.app",
-      messagingSenderId: "106630001469",
-      appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
-    };
-    firebase.initializeApp(firebaseConfig);
-  </script>
+    <div id="routeSummary"></div>
 
-  <!-- Affichage map après login -->
-  <script>
-    firebase.auth().onAuthStateChanged(function(user) {
-      if (user) {
-        document.getElementById("loginContainer").style.display = "none";
-        document.getElementById("map").style.display = "block";
-        document.getElementById("logoutBtn").style.display = "block";
-        document.getElementById("controls").style.display = "flex";
-      } else {
-        document.getElementById("loginContainer").style.display = "block";
-        document.getElementById("map").style.display = "none";
-        document.getElementById("logoutBtn").style.display = "none";
-        document.getElementById("controls").style.display = "none";
-      }
-    });
-  </script>
+    <button id="logoutBtn">Déconnexion</button>
 
-  <!-- ✅ Script principal chargé en dernier (résout ton bug) -->
-  <script src="/Hanafi-Map/app.js"></script>
+    <script>
+        // ===========================================================
+        // GESTION DE L'INSTALLATION AUTOMATIQUE APK
+        // ===========================================================
+        
+        // URL de téléchargement de votre APK (à modifier avec votre vraie URL)
+        const APK_DOWNLOAD_URL = 'https://github.com/nassimpublishing-dz/Hanafi-Map/releases/latest/download/app-release.apk';
+        
+        let deferredPrompt;
+        const installBanner = document.getElementById('installBanner');
+        const installButton = document.getElementById('installButton');
+        const closeBanner = document.getElementById('closeBanner');
 
-  <!-- ✅ Enregistrement du Service Worker CORRIGÉ -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        // Note le /Hanafi-Map/ ajouté ici
-        navigator.serviceWorker.register('/Hanafi-Map/service-worker.js')
-          .then(registration => {
-            console.log('Service Worker enregistré avec succès:', registration);
-          })
-          .catch(error => {
-            console.log("Échec de l'enregistrement du Service Worker:", error);
-          });
-      });
-    }
-  </script>
+        // Détecter si l'app est déjà installée
+        function isAppInstalled() {
+            return window.matchMedia('(display-mode: standalone)').matches || 
+                   window.navigator.standalone ||
+                   document.referrer.includes('android-app://');
+        }
 
+        // Vérifier si on est sur mobile
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        // Afficher la bannière d'installation
+        function showInstallBanner() {
+            if (isMobileDevice() && !isAppInstalled()) {
+                console.log('📱 Affichage bannière installation');
+                installBanner.style.display = 'block';
+                
+                // Masquer automatiquement après 30 secondes
+                setTimeout(() => {
+                    if (installBanner.style.display === 'block') {
+                        installBanner.style.display = 'none';
+                        localStorage.setItem('installBannerShown', 'true');
+                    }
+                }, 30000);
+            }
+        }
+
+        // Événement pour l'installation PWA
+        window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('🎯 Installation PWA disponible');
+            e.preventDefault();
+            deferredPrompt = e;
+            showInstallBanner();
+        });
+
+        // Installation PWA
+        installButton.addEventListener('click', async () => {
+            console.log('🔄 Début installation');
+            
+            if (deferredPrompt) {
+                // Installation PWA standard
+                try {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    
+                    if (outcome === 'accepted') {
+                        console.log('✅ PWA installée avec succès');
+                        installBanner.style.display = 'none';
+                        localStorage.setItem('installBannerShown', 'true');
+                    } else {
+                        console.log('❌ Installation PWA annulée');
+                        downloadAPK(); // Fallback vers APK
+                    }
+                } catch (error) {
+                    console.error('Erreur installation PWA:', error);
+                    downloadAPK(); // Fallback vers APK
+                }
+                deferredPrompt = null;
+            } else {
+                // Fallback : téléchargement APK
+                downloadAPK();
+            }
+        });
+
+        // Téléchargement de l'APK
+        function downloadAPK() {
+            console.log('📦 Début du téléchargement APK');
+            
+            // Créer un lien de téléchargement
+            const link = document.createElement('a');
+            link.href = APK_DOWNLOAD_URL;
+            link.download = 'Hanafi-Livraison.apk';
+            link.target = '_blank';
+            link.style.display = 'none';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Message de confirmation
+            alert('📱 Téléchargement de l\'APK commencé !\n\nUne fois téléchargé :\n1. Ouvrez le fichier .apk\n2. Autorisez l\'installation\n3. Lancez l\'application');
+            
+            // Masquer la bannière
+            installBanner.style.display = 'none';
+            localStorage.setItem('installBannerShown', 'true');
+        }
+
+        // Fermer la bannière
+        closeBanner.addEventListener('click', () => {
+            console.log('❌ Bannière fermée');
+            installBanner.style.display = 'none';
+            localStorage.setItem('installBannerShown', 'true');
+            
+            // Re-proposer dans 7 jours
+            const nextShow = new Date();
+            nextShow.setDate(nextShow.getDate() + 7);
+            localStorage.setItem('nextInstallPrompt', nextShow.getTime());
+        });
+
+        // Vérifier si on doit afficher la bannière
+        function shouldShowBanner() {
+            const bannerShown = localStorage.getItem('installBannerShown');
+            const nextPrompt = localStorage.getItem('nextInstallPrompt');
+            
+            if (bannerShown === 'true' && nextPrompt) {
+                const now = new Date().getTime();
+                return now >= parseInt(nextPrompt);
+            }
+            
+            return bannerShown !== 'true';
+        }
+
+        // Détection de l'installation réussie
+        window.addEventListener('appinstalled', () => {
+            console.log('🎉 Application installée avec succès !');
+            installBanner.style.display = 'none';
+            localStorage.setItem('installBannerShown', 'true');
+        });
+
+        // Initialisation au chargement
+        window.addEventListener('load', () => {
+            console.log('🚀 Application chargée - Vérification installation');
+            
+            if (isMobileDevice() && !isAppInstalled() && shouldShowBanner()) {
+                // Afficher après 3 secondes
+                setTimeout(showInstallBanner, 3000);
+            }
+            
+            // Si pas de bannière PWA après 5 secondes, proposer l'APK
+            setTimeout(() => {
+                if (isMobileDevice() && !isAppInstalled() && !deferredPrompt && shouldShowBanner()) {
+                    console.log('📱 Aucune PWA disponible - Proposition APK');
+                    showInstallBanner();
+                }
+            }, 5000);
+        });
+
+        // Fonction pour forcer l'affichage de la bannière (pour tests)
+        window.showInstallPrompt = function() {
+            showInstallBanner();
+        };
+    </script>
+
+    <!-- Configuration Firebase -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyC0XcVxZ6v9v8q8Q6b6r9K5jM8wXx7vF8d",
+            authDomain: "hanafi-livraison.firebaseapp.com",
+            databaseURL: "https://hanafi-livraison-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "hanafi-livraison",
+            storageBucket: "hanafi-livraison.firebasestorage.app",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdef123456"
+        };
+        
+        // Initialiser Firebase
+        firebase.initializeApp(firebaseConfig);
+    </script>
+
+    <!-- Vos scripts existants -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
