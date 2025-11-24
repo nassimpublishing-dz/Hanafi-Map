@@ -1,22 +1,6 @@
 /* ===========================================================
-   app.js — VERSION URGENCE - Service Worker désactivé
+   app.js — Version avec navigation TOTALEMENT LIBRE
    =========================================================== */
-
-// DÉSACTIVER LE SERVICE WORKER IMMÉDIATEMENT
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(reg => reg.unregister());
-    console.log('🚨 Service Workers désactivés');
-  });
-}
-
-// VIDER LE CACHE
-if ('caches' in window) {
-  caches.keys().then(keys => {
-    keys.forEach(key => caches.delete(key));
-    console.log('🗑️ Caches vidés');
-  });
-}
 
 const defaultCenter = [36.7119, 4.0459];
 const defaultZoom = 17;
@@ -46,6 +30,15 @@ let geoWatchId = null;
 let clientsRef = null;
 let currentUser = null;
 let destination = null;
+let lastRouteUpdate = 0;
+let routeRecalculationInterval = null;
+
+/* ---------- CONSTANTES DE RECALCUL ---------- */
+const ROUTE_UPDATE_DISTANCE_THRESHOLD = 50;
+const ROUTE_UPDATE_TIME_THRESHOLD = 30000;
+
+/* ---------- AJOUT : TIMER DÉCONNEXION AUTO ---------- */
+let autoLogoutTimer = null;
 
 /* ---------- ICONES ---------- */
 const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
@@ -53,7 +46,7 @@ const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", icon
 
 /* ---------- Vérifie Firebase ---------- */
 if (typeof firebase === "undefined") {
-  console.error("Firebase non chargé");
+  console.error("Firebase non chargé — vérifie l'inclusion du SDK dans index.html");
 }
 
 /* ---------- LOGIN ---------- */
@@ -87,13 +80,21 @@ if (logoutBtn) {
 }
 
 /* ===========================================================
-   SURVEILLANCE AUTH
+   SURVEILLANCE AUTH + AUTO-LOGOUT 10h
    =========================================================== */
 firebase.auth().onAuthStateChanged(async user => {
   try {
     if (user) {
       currentUser = user;
       console.log("🔵 Connecté :", user.email);
+
+      /* ---------- AUTO LOGOUT APRÈS 10H ---------- */
+      if (autoLogoutTimer) clearTimeout(autoLogoutTimer);
+      autoLogoutTimer = setTimeout(() => {
+        alert("⏳ Votre session a expiré après 10 heures. Déconnexion automatique.");
+        firebase.auth().signOut();
+      }, 36000000);
+      /* ------------------------------------------ */
 
       if (loginContainer) loginContainer.style.display = "none";
       if (logoutBtn) logoutBtn.style.display = "block";
@@ -104,6 +105,12 @@ firebase.auth().onAuthStateChanged(async user => {
       startGeolocAndListen();
     } else {
       console.log("🔴 Déconnecté");
+
+      /* ---------- STOP TIMER ---------- */
+      if (autoLogoutTimer) clearTimeout(autoLogoutTimer);
+      autoLogoutTimer = null;
+      /* -------------------------------- */
+
       currentUser = null;
       cleanupAfterLogout();
     }
@@ -151,7 +158,7 @@ function initMap() {
 }
 
 /* ===========================================================
-   GÉOLOCALISATION
+   GÉOLOCALISATION + CLIENTS - NAVIGATION LIBRE
    =========================================================== */
 function startGeolocAndListen() {
   if (geoWatchId !== null) {
@@ -164,11 +171,13 @@ function startGeolocAndListen() {
   }
 
   if ("geolocation" in navigator) {
+    // Position initiale - UNIQUEMENT au début
     navigator.geolocation.getCurrentPosition(pos => {
       const { latitude: lat, longitude: lng } = pos.coords;
       if (!userMarker) {
         userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
       }
+      // ✅ Recentrage UNIQUEMENT à la première connexion
       map.setView([lat, lng], 15);
     }, errorHandler, {
       enableHighAccuracy: true,
@@ -176,11 +185,13 @@ function startGeolocAndListen() {
       maximumAge: 0
     });
 
+    // Surveillance en temps réel SANS RECENTRAGE
     geoWatchId = navigator.geolocation.watchPosition(
       pos => {
         const { latitude: lat, longitude: lng } = pos.coords;
         updateUserPosition(lat, lng);
         
+        // Mettre à jour Firebase
         if (currentUser) {
           firebase.database().ref(`livreurs/${currentUser.uid}`).set({ 
             lat, 
@@ -218,7 +229,7 @@ function startGeolocAndListen() {
 }
 
 /* ===========================================================
-   FONCTION DE MISE À JOUR POSITION
+   FONCTION DE MISE À JOUR POSITION - SANS RECENTRAGE
    =========================================================== */
 function updateUserPosition(lat, lng) {
   if (!userMarker) {
@@ -228,6 +239,160 @@ function updateUserPosition(lat, lng) {
   } else {
     userMarker.setLatLng([lat, lng]);
   }
+
+  // Vérifier si on s'est éloigné de l'itinéraire
+  if (destination && routePolyline) {
+    checkRouteDeviation([lat, lng]);
+  }
+
+  // ✅ AUCUN RECENTRAGE AUTOMATIQUE - NAVIGATION 100% LIBRE
+}
+
+/* ===========================================================
+   DÉTECTION DE DÉVIATION DE L'ITINÉRAIRE
+   =========================================================== */
+function checkRouteDeviation(currentPosition) {
+  if (!routePolyline || !destination) return;
+
+  const routeLatLngs = routePolyline.getLatLngs();
+  let minDistance = Infinity;
+
+  for (let i = 0; i < routeLatLngs.length - 1; i++) {
+    const segmentStart = routeLatLngs[i];
+    const segmentEnd = routeLatLngs[i + 1];
+    const distance = distanceToSegment(currentPosition, segmentStart, segmentEnd);
+    if (distance < minDistance) {
+      minDistance = distance;
+    }
+  }
+
+  const distanceToDestination = map.distance(currentPosition, destination);
+  const timeSinceLastUpdate = Date.now() - lastRouteUpdate;
+
+  const shouldRecalculate = 
+    minDistance > ROUTE_UPDATE_DISTANCE_THRESHOLD && 
+    timeSinceLastUpdate > ROUTE_UPDATE_TIME_THRESHOLD;
+
+  if (shouldRecalculate) {
+    console.log(`🔄 Déviation détectée: ${minDistance.toFixed(1)}m - Recalcul de l'itinéraire...`);
+    recalculateRoute(currentPosition, destination);
+  }
+}
+
+/* ===========================================================
+   CALCUL DISTANCE À UN SEGMENT
+   =========================================================== */
+function distanceToSegment(point, segmentStart, segmentEnd) {
+  const A = point[0] - segmentStart.lat;
+  const B = point[1] - segmentStart.lng;
+  const C = segmentEnd.lat - segmentStart.lat;
+  const D = segmentEnd.lng - segmentStart.lng;
+
+  const dot = A * C + B * D;
+  const lenSq = C * C + D * D;
+  let param = -1;
+
+  if (lenSq !== 0) {
+    param = dot / lenSq;
+  }
+
+  let xx, yy;
+
+  if (param < 0) {
+    xx = segmentStart.lat;
+    yy = segmentStart.lng;
+  } else if (param > 1) {
+    xx = segmentEnd.lat;
+    yy = segmentEnd.lng;
+  } else {
+    xx = segmentStart.lat + param * C;
+    yy = segmentStart.lng + param * D;
+  }
+
+  const dx = point[0] - xx;
+  const dy = point[1] - yy;
+  
+  return Math.sqrt(dx * dx + dy * dy) * 111319.9;
+}
+
+/* ===========================================================
+   RECALCUL AUTOMATIQUE DE L'ITINÉRAIRE - SANS RECENTRAGE
+   =========================================================== */
+async function recalculateRoute(start, end) {
+  if (!start || !end) return;
+
+  lastRouteUpdate = Date.now();
+  
+  const infoDiv = document.getElementById("routeSummary");
+  infoDiv.innerHTML = "🔄 <b>Adaptation de l'itinéraire...</b>";
+
+  try {
+    const url = `https://graphhopper.com/api/1/route?point=${start[0]},${start[1]}&point=${end[0]},${end[1]}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const path = data.paths?.[0];
+    
+    if (!path) throw new Error("Aucun itinéraire trouvé");
+
+    // Mettre à jour la polyligne SANS RECENTRER
+    const coords = path.points.coordinates.map(p => [p[1], p[0]]);
+    routePolyline.setLatLngs(coords);
+
+    // Mettre à jour les informations
+    const km = (path.distance / 1000).toFixed(2);
+    const min = Math.round(path.time / 60000);
+
+    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 🔄 <b>Itinéraire adapté</b>`;
+
+    // Afficher une notification discrète
+    showTempNotification("🔄 Itinéraire recalculé !", 2000);
+    
+  } catch (error) {
+    console.error("Erreur recalcul itinéraire:", error);
+    infoDiv.innerHTML = "❌ <b>Erreur de recalcul</b> - Restez sur l'itinéraire principal";
+  }
+}
+
+/* ===========================================================
+   NOTIFICATION TEMPORAIRE
+   =========================================================== */
+function showTempNotification(message, duration = 2000) {
+  const notification = document.createElement("div");
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #007bff;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    z-index: 10000;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: slideDown 0.3s ease-out;
+  `;
+  
+  notification.textContent = message;
+  document.body.appendChild(notification);
+
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideDown {
+      from { top: -50px; opacity: 0; }
+      to { top: 20px; opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  setTimeout(() => {
+    notification.style.animation = 'slideUp 0.3s ease-in';
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, duration);
 }
 
 /* ===========================================================
@@ -237,13 +402,13 @@ function errorHandler(error) {
   console.warn('Erreur GPS:', error);
   switch(error.code) {
     case error.PERMISSION_DENIED:
-      alert("❌ GPS refusé. Activez la localisation.");
+      alert("❌ GPS refusé. Activez la localisation dans les paramètres de votre navigateur.");
       break;
     case error.POSITION_UNAVAILABLE:
-      console.log("Position indisponible");
+      console.log("Position indisponible - vérifiez votre connexion GPS");
       break;
     case error.TIMEOUT:
-      console.log("Timeout GPS");
+      console.log("Timeout GPS - réessai en cours...");
       break;
     default:
       console.log("Erreur GPS inconnue:", error.message);
@@ -273,7 +438,7 @@ function popupClientHtml(uid, id, c) {
 }
 
 /* ===========================================================
-   ITINÉRAIRES - VERSION SIMPLIFIÉE
+   ITINÉRAIRES - NAVIGATION 100% LIBRE
    =========================================================== */
 async function calculerItineraire(destLat, destLng) {
   routeLayer.clearLayers();
@@ -281,6 +446,7 @@ async function calculerItineraire(destLat, destLng) {
 
   const me = userMarker.getLatLng();
   destination = [destLat, destLng];
+  lastRouteUpdate = Date.now();
   
   const infoDiv = document.getElementById("routeSummary");
   infoDiv.style.display = "block";
@@ -296,18 +462,66 @@ async function calculerItineraire(destLat, destLng) {
     const coords = path.points.coordinates.map(p => [p[1], p[0]]);
     routePolyline = L.polyline(coords, { color: "#0074FF", weight: 5 }).addTo(routeLayer);
 
+    // Ajouter le point de destination
     L.marker([destLat, destLng], { icon: clientIcon })
       .addTo(routeLayer)
       .bindPopup("🎯 Destination");
 
+    // ✅ SUPPRIMÉ TOUT RECENTRAGE - La carte reste où elle est
+    // L'utilisateur peut naviguer librement
+
     const km = (path.distance / 1000).toFixed(2);
     const min = Math.round(path.time / 60000);
 
-    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min`;
+    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 📍 <b>Navigation active</b>`;
+
+    // Démarrer la surveillance de déviation
+    startRouteMonitoring();
 
   } catch (error) {
     console.error("Erreur itinéraire:", error);
-    infoDiv.textContent = "❌ Impossible de calculer l'itinéraire.";
+    infoDiv.textContent = "❌ Impossible de calculer l'itinéraire. Vérifiez votre connexion.";
+  }
+}
+
+/* ===========================================================
+   SURVEILLANCE DE L'ITINÉRAIRE
+   =========================================================== */
+function startRouteMonitoring() {
+  if (routeRecalculationInterval) {
+    clearInterval(routeRecalculationInterval);
+  }
+  
+  routeRecalculationInterval = setInterval(() => {
+    if (userMarker && destination) {
+      const currentPos = userMarker.getLatLng();
+      checkRouteDeviation([currentPos.lat, currentPos.lng]);
+    }
+  }, 10000);
+}
+
+/* ===========================================================
+   MISE À JOUR ITINÉRAIRE MANUELLE
+   =========================================================== */
+async function updateRoute(start, end) {
+  if (!routePolyline) return;
+  
+  try {
+    const url = `https://graphhopper.com/api/1/route?point=${start[0]},${start[1]}&point=${end[0]},${end[1]}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const path = data.paths?.[0];
+    
+    if (path) {
+      const coords = path.points.coordinates.map(p => [p[1], p[0]]);
+      routePolyline.setLatLngs(coords);
+      
+      const km = (path.distance / 1000).toFixed(2);
+      const min = Math.round(path.time / 60000);
+      routeSummary.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 🔄 <b>Itinéraire mis à jour</b>`;
+    }
+  } catch (error) {
+    console.log("Erreur mise à jour itinéraire:", error);
   }
 }
 
@@ -315,6 +529,12 @@ function supprimerItineraire() {
   if (routeLayer) routeLayer.clearLayers();
   routePolyline = null;
   destination = null;
+  
+  if (routeRecalculationInterval) {
+    clearInterval(routeRecalculationInterval);
+    routeRecalculationInterval = null;
+  }
+  
   routeSummary.style.display = "none";
   routeSummary.textContent = "";
 }
@@ -442,6 +662,11 @@ function cleanupAfterLogout() {
   if (clientsRef) clientsRef.off();
   clientsRef = null;
 
+  if (routeRecalculationInterval) {
+    clearInterval(routeRecalculationInterval);
+    routeRecalculationInterval = null;
+  }
+
   if (routeLayer) routeLayer.clearLayers();
   if (clientsLayer) clientsLayer.clearLayers();
 
@@ -460,5 +685,3 @@ function cleanupAfterLogout() {
    INIT
    =========================================================== */
 enableSearch();
-
-console.log('✅ App chargée - Mode urgence activé');
