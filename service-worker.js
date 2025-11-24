@@ -1,20 +1,16 @@
-const CACHE_NAME = 'hanafi-' + Date.now();
-
-self.addEventListener('install', event => {
+// Service Worker ULTRA SIMPLE - Ne fait rien
+self.addEventListener('install', (event) => {
   self.skipWaiting();
-  console.log('🚀 Installation nouvelle version');
+  console.log('✅ Service Worker installé (mode simple)');
 });
 
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys => 
-      Promise.all(keys.map(key => caches.delete(key)))
-    ).then(() => self.clients.claim())
-  );
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+  console.log('✅ Service Worker activé (mode simple)');
 });
 
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
-  );
+// NE RIEN INTERCEPTER - Laisser passer toutes les requêtes
+self.addEventListener('fetch', (event) => {
+  // Laisser toutes les requêtes passer normalement
+  return;
 });
