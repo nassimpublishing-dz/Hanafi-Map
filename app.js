@@ -1,6 +1,9 @@
 /* ===========================================================
-   app.js — Version avec navigation TOTALEMENT LIBRE
+   app.js — Version avec navigation TOTALEMENT LIBRE + vérification version
    =========================================================== */
+
+const APP_VERSION = 'v4.0-' + new Date().getTime();
+console.log('🔄 Version app:', APP_VERSION);
 
 const defaultCenter = [36.7119, 4.0459];
 const defaultZoom = 17;
@@ -43,6 +46,49 @@ let autoLogoutTimer = null;
 /* ---------- ICONES ---------- */
 const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
 const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [48,48], iconAnchor:[24,48] });
+
+/* ===========================================================
+   VÉRIFICATION DE VERSION - FORCER MAJ APK
+   =========================================================== */
+function checkAndUpdateVersion() {
+  // Forcer le rechargement si ancienne version détectée
+  if (localStorage.getItem('appVersion') !== APP_VERSION) {
+    console.log('🔄 Nouvelle version détectée, mise à jour forcée...');
+    localStorage.setItem('appVersion', APP_VERSION);
+    
+    // Vider le cache du Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(reg => {
+          console.log('🗑️ Service Worker désenregistré:', reg.scope);
+          reg.unregister();
+        });
+      });
+    }
+    
+    // Vider le cache normal
+    if ('caches' in window) {
+      caches.keys().then(keys => {
+        keys.forEach(key => {
+          console.log('🗑️ Cache supprimé:', key);
+          caches.delete(key);
+        });
+      });
+    }
+    
+    // Forcer le rechargement après nettoyage
+    setTimeout(() => {
+      console.log('🔄 Rechargement de la page...');
+      window.location.reload(true);
+    }, 1000);
+    
+    return true; // Version changée
+  }
+  return false; // Même version
+}
+
+// Exécuter la vérification au chargement
+window.addEventListener('load', checkAndUpdateVersion);
 
 /* ---------- Vérifie Firebase ---------- */
 if (typeof firebase === "undefined") {
