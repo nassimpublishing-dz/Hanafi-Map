@@ -322,7 +322,7 @@ function distanceToSegment(point, segmentStart, segmentEnd) {
 }
 
 /* ===========================================================
-   RECALCUL AUTOMATIQUE DE L'ITINÉRAIRE - NOUVELLE
+   RECALCUL AUTOMATIQUE DE L'ITINÉRAIRE - CORRIGÉ
    =========================================================== */
 async function recalculateRoute(start, end) {
   if (!start || !end) return;
@@ -343,6 +343,9 @@ async function recalculateRoute(start, end) {
     // Mettre à jour la polyligne
     const coords = path.points.coordinates.map(p => [p[1], p[0]]);
     routePolyline.setLatLngs(coords);
+
+    // ✅ SUPPRIMER le recentrage automatique pendant le recalcul
+    // La carte reste à sa position actuelle
 
     // Mettre à jour les informations
     const km = (path.distance / 1000).toFixed(2);
@@ -447,7 +450,7 @@ function popupClientHtml(uid, id, c) {
 }
 
 /* ===========================================================
-   ITINÉRAIRES - AMÉLIORÉ AVEC SUIVI AUTOMATIQUE
+   ITINÉRAIRES - CORRIGÉ SANS RECENTRAGE AGRESSIF
    =========================================================== */
 async function calculerItineraire(destLat, destLng) {
   routeLayer.clearLayers();
@@ -476,7 +479,24 @@ async function calculerItineraire(destLat, destLng) {
       .addTo(routeLayer)
       .bindPopup("🎯 Destination");
 
-    map.fitBounds(routePolyline.getBounds(), { padding: [50, 50], maxZoom: 17 });
+    // ✅ REMPLACER le fitBounds agressif par un recentrage intelligent
+    const bounds = routePolyline.getBounds();
+    
+    if (bounds.isValid()) {
+      // Calculer le centre de l'itinéraire
+      const routeCenter = bounds.getCenter();
+      
+      // Déterminer un zoom approprié (pas trop serré)
+      const idealZoom = Math.min(map.getBoundsZoom(bounds), 15);
+      
+      // Recentrer doucement sur le début de l'itinéraire (votre position)
+      // mais seulement si on est très zoomé ou loin
+      const currentZoom = map.getZoom();
+      if (currentZoom < 13) {
+        map.setView([me.lat, me.lng], Math.max(idealZoom, 13));
+      }
+      // Sinon, la carte reste à sa position actuelle
+    }
 
     const km = (path.distance / 1000).toFixed(2);
     const min = Math.round(path.time / 60000);
@@ -697,4 +717,3 @@ function cleanupAfterLogout() {
    INIT
    =========================================================== */
 enableSearch();
-
