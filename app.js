@@ -244,15 +244,9 @@ function updateUserPosition(lat, lng) {
     checkRouteDeviation([lat, lng]);
   }
 
-  // Recentrer légèrement la carte
-  if (map && userMarker) {
-    const currentCenter = map.getCenter();
-    const newLatLng = [lat, lng];
-    const distance = map.distance(currentCenter, newLatLng);
-    if (distance > 50) {
-      map.setView(newLatLng, map.getZoom());
-    }
-  }
+  // ✅ SUPPRIMER le recentrage automatique
+  // La carte ne se recentrera plus automatiquement
+  // L'utilisateur garde le contrôle manuel
 }
 
 /* ===========================================================
@@ -703,3 +697,4 @@ function cleanupAfterLogout() {
    INIT
    =========================================================== */
 enableSearch();
+
