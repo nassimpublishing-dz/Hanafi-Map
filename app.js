@@ -1,5 +1,5 @@
 /* ===========================================================
-   app.js — Version avec navigation TOTALEMENT LIBRE
+   app.js — Version PERFECTIONNÉE - Navigation libre + stable
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
@@ -44,6 +44,21 @@ let autoLogoutTimer = null;
 const clientIcon = L.icon({ iconUrl: "/Hanafi-Map/magasin-delectronique.png", iconSize: [42,42], iconAnchor:[21,42] });
 const livreurIcon = L.icon({ iconUrl: "/Hanafi-Map/camion-dexpedition.png", iconSize: [48,48], iconAnchor:[24,48] });
 
+/* ===========================================================
+   CORRECTION URGENCE - DÉSACTIVER SERVICE WORKER BUGGÉ
+   =========================================================== */
+// Au chargement, désactiver le Service Worker problématique
+window.addEventListener('load', function() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(reg => {
+        console.log('🔧 Désactivation Service Worker buggé:', reg.scope);
+        reg.unregister();
+      });
+    });
+  }
+});
+
 /* ---------- Vérifie Firebase ---------- */
 if (typeof firebase === "undefined") {
   console.error("Firebase non chargé — vérifie l'inclusion du SDK dans index.html");
@@ -80,7 +95,7 @@ if (logoutBtn) {
 }
 
 /* ===========================================================
-   SURVEILLANCE AUTH + AUTO-LOGOUT 10h
+   SURVEILLANCE AUTH + AUTO-LOGOUT 10h - AMÉLIORÉ
    =========================================================== */
 firebase.auth().onAuthStateChanged(async user => {
   try {
@@ -91,8 +106,14 @@ firebase.auth().onAuthStateChanged(async user => {
       /* ---------- AUTO LOGOUT APRÈS 10H ---------- */
       if (autoLogoutTimer) clearTimeout(autoLogoutTimer);
       autoLogoutTimer = setTimeout(() => {
-        alert("⏳ Votre session a expiré après 10 heures. Déconnexion automatique.");
-        firebase.auth().signOut();
+        if (confirm("⏳ Votre session a expiré après 10 heures. Voulez-vous rester connecté ?")) {
+          // Redémarrer le timer si l'utilisateur veut rester
+          autoLogoutTimer = setTimeout(() => {
+            firebase.auth().signOut();
+          }, 36000000);
+        } else {
+          firebase.auth().signOut();
+        }
       }, 36000000);
       /* ------------------------------------------ */
 
@@ -249,7 +270,7 @@ function updateUserPosition(lat, lng) {
 }
 
 /* ===========================================================
-   DÉTECTION DE DÉVIATION DE L'ITINÉRAIRE
+   DÉTECTION DE DÉVIATION DE L'ITINÉRAIRE - OPTIMISÉE
    =========================================================== */
 function checkRouteDeviation(currentPosition) {
   if (!routePolyline || !destination) return;
@@ -257,16 +278,18 @@ function checkRouteDeviation(currentPosition) {
   const routeLatLngs = routePolyline.getLatLngs();
   let minDistance = Infinity;
 
-  for (let i = 0; i < routeLatLngs.length - 1; i++) {
+  // Optimisation : vérifier seulement quelques points clés
+  const step = Math.max(1, Math.floor(routeLatLngs.length / 10));
+  
+  for (let i = 0; i < routeLatLngs.length - 1; i += step) {
     const segmentStart = routeLatLngs[i];
-    const segmentEnd = routeLatLngs[i + 1];
+    const segmentEnd = routeLatLngs[Math.min(i + 1, routeLatLngs.length - 1)];
     const distance = distanceToSegment(currentPosition, segmentStart, segmentEnd);
     if (distance < minDistance) {
       minDistance = distance;
     }
   }
 
-  const distanceToDestination = map.distance(currentPosition, destination);
   const timeSinceLastUpdate = Date.now() - lastRouteUpdate;
 
   const shouldRecalculate = 
@@ -324,11 +347,16 @@ async function recalculateRoute(start, end) {
   lastRouteUpdate = Date.now();
   
   const infoDiv = document.getElementById("routeSummary");
+  const originalContent = infoDiv.innerHTML; // Sauvegarder le contenu original
+  
   infoDiv.innerHTML = "🔄 <b>Adaptation de l'itinéraire...</b>";
 
   try {
     const url = `https://graphhopper.com/api/1/route?point=${start[0]},${start[1]}&point=${end[0]},${end[1]}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
     const res = await fetch(url);
+    
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    
     const data = await res.json();
     const path = data.paths?.[0];
     
@@ -349,15 +377,24 @@ async function recalculateRoute(start, end) {
     
   } catch (error) {
     console.error("Erreur recalcul itinéraire:", error);
-    infoDiv.innerHTML = "❌ <b>Erreur de recalcul</b> - Restez sur l'itinéraire principal";
+    // Restaurer le contenu original en cas d'erreur
+    infoDiv.innerHTML = originalContent;
+    showTempNotification("❌ Erreur de recalcul", 2000);
   }
 }
 
 /* ===========================================================
-   NOTIFICATION TEMPORAIRE
+   NOTIFICATION TEMPORAIRE - AMÉLIORÉE
    =========================================================== */
 function showTempNotification(message, duration = 2000) {
+  // Éviter les notifications multiples
+  const existingNotification = document.getElementById('tempNotification');
+  if (existingNotification) {
+    existingNotification.remove();
+  }
+
   const notification = document.createElement("div");
+  notification.id = 'tempNotification';
   notification.style.cssText = `
     position: fixed;
     top: 20px;
@@ -376,15 +413,24 @@ function showTempNotification(message, duration = 2000) {
   notification.textContent = message;
   document.body.appendChild(notification);
 
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideDown {
-      from { top: -50px; opacity: 0; }
-      to { top: 20px; opacity: 1; }
-    }
-  `;
-  document.head.appendChild(style);
+  // Ajouter l'animation CSS seulement si elle n'existe pas déjà
+  if (!document.getElementById('notificationStyles')) {
+    const style = document.createElement('style');
+    style.id = 'notificationStyles';
+    style.textContent = `
+      @keyframes slideDown {
+        from { top: -50px; opacity: 0; }
+        to { top: 20px; opacity: 1; }
+      }
+      @keyframes slideUp {
+        from { top: 20px; opacity: 1; }
+        to { top: -50px; opacity: 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
+  // Supprimer après la durée spécifiée
   setTimeout(() => {
     notification.style.animation = 'slideUp 0.3s ease-in';
     setTimeout(() => {
@@ -455,6 +501,9 @@ async function calculerItineraire(destLat, destLng) {
   try {
     const url = `https://graphhopper.com/api/1/route?point=${me.lat},${me.lng}&point=${destLat},${destLng}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
     const res = await fetch(url);
+    
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    
     const data = await res.json();
     const path = data.paths?.[0];
     if (!path) throw new Error("Aucun itinéraire trouvé");
@@ -485,44 +534,21 @@ async function calculerItineraire(destLat, destLng) {
 }
 
 /* ===========================================================
-   SURVEILLANCE DE L'ITINÉRAIRE
+   SURVEILLANCE DE L'ITINÉRAIRE - OPTIMISÉE
    =========================================================== */
 function startRouteMonitoring() {
+  // S'assurer qu'aucun intervalle précédent n'est actif
   if (routeRecalculationInterval) {
     clearInterval(routeRecalculationInterval);
   }
   
+  // Vérifier périodiquement la position (toutes les 15 secondes au lieu de 10)
   routeRecalculationInterval = setInterval(() => {
     if (userMarker && destination) {
       const currentPos = userMarker.getLatLng();
       checkRouteDeviation([currentPos.lat, currentPos.lng]);
     }
-  }, 10000);
-}
-
-/* ===========================================================
-   MISE À JOUR ITINÉRAIRE MANUELLE
-   =========================================================== */
-async function updateRoute(start, end) {
-  if (!routePolyline) return;
-  
-  try {
-    const url = `https://graphhopper.com/api/1/route?point=${start[0]},${start[1]}&point=${end[0]},${end[1]}&vehicle=car&locale=fr&points_encoded=false&key=${GRAPHHOPPER_KEY}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    const path = data.paths?.[0];
-    
-    if (path) {
-      const coords = path.points.coordinates.map(p => [p[1], p[0]]);
-      routePolyline.setLatLngs(coords);
-      
-      const km = (path.distance / 1000).toFixed(2);
-      const min = Math.round(path.time / 60000);
-      routeSummary.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 🔄 <b>Itinéraire mis à jour</b>`;
-    }
-  } catch (error) {
-    console.log("Erreur mise à jour itinéraire:", error);
-  }
+  }, 15000);
 }
 
 function supprimerItineraire() {
@@ -530,6 +556,7 @@ function supprimerItineraire() {
   routePolyline = null;
   destination = null;
   
+  // Arrêter la surveillance
   if (routeRecalculationInterval) {
     clearInterval(routeRecalculationInterval);
     routeRecalculationInterval = null;
@@ -685,3 +712,5 @@ function cleanupAfterLogout() {
    INIT
    =========================================================== */
 enableSearch();
+
+console.log('✅ App perfectionnée chargée - Service Worker désactivé');
