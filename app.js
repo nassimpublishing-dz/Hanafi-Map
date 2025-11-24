@@ -1,5 +1,5 @@
 /* ===========================================================
-   app.js — Version avec recalcul automatique d'itinéraire
+   app.js — Version avec navigation TOTALEMENT LIBRE
    =========================================================== */
 
 const defaultCenter = [36.7119, 4.0459];
@@ -31,11 +31,11 @@ let clientsRef = null;
 let currentUser = null;
 let destination = null;
 let lastRouteUpdate = 0;
-let routeRecalculationInterval = null; // ← NOUVEAU : Intervalle de recalcul
+let routeRecalculationInterval = null;
 
 /* ---------- CONSTANTES DE RECALCUL ---------- */
-const ROUTE_UPDATE_DISTANCE_THRESHOLD = 50; // ← Seuil de déviation en mètres
-const ROUTE_UPDATE_TIME_THRESHOLD = 30000;  // ← Temps minimum entre recalculs (30s)
+const ROUTE_UPDATE_DISTANCE_THRESHOLD = 50;
+const ROUTE_UPDATE_TIME_THRESHOLD = 30000;
 
 /* ---------- AJOUT : TIMER DÉCONNEXION AUTO ---------- */
 let autoLogoutTimer = null;
@@ -93,7 +93,7 @@ firebase.auth().onAuthStateChanged(async user => {
       autoLogoutTimer = setTimeout(() => {
         alert("⏳ Votre session a expiré après 10 heures. Déconnexion automatique.");
         firebase.auth().signOut();
-      }, 36000000); // 10 heures
+      }, 36000000);
       /* ------------------------------------------ */
 
       if (loginContainer) loginContainer.style.display = "none";
@@ -158,7 +158,7 @@ function initMap() {
 }
 
 /* ===========================================================
-   GÉOLOCALISATION + CLIENTS - AVEC DÉTECTION DE DÉVIATION
+   GÉOLOCALISATION + CLIENTS - NAVIGATION LIBRE
    =========================================================== */
 function startGeolocAndListen() {
   if (geoWatchId !== null) {
@@ -171,12 +171,13 @@ function startGeolocAndListen() {
   }
 
   if ("geolocation" in navigator) {
-    // Position initiale
+    // Position initiale - UNIQUEMENT au début
     navigator.geolocation.getCurrentPosition(pos => {
       const { latitude: lat, longitude: lng } = pos.coords;
       if (!userMarker) {
         userMarker = L.marker([lat, lng], { icon: livreurIcon }).addTo(map);
       }
+      // ✅ Recentrage UNIQUEMENT à la première connexion
       map.setView([lat, lng], 15);
     }, errorHandler, {
       enableHighAccuracy: true,
@@ -184,7 +185,7 @@ function startGeolocAndListen() {
       maximumAge: 0
     });
 
-    // Surveillance en temps réel avec détection de déviation
+    // Surveillance en temps réel SANS RECENTRAGE
     geoWatchId = navigator.geolocation.watchPosition(
       pos => {
         const { latitude: lat, longitude: lng } = pos.coords;
@@ -228,7 +229,7 @@ function startGeolocAndListen() {
 }
 
 /* ===========================================================
-   FONCTION DE MISE À JOUR POSITION AVEC DÉTECTION DÉVIATION
+   FONCTION DE MISE À JOUR POSITION - SANS RECENTRAGE
    =========================================================== */
 function updateUserPosition(lat, lng) {
   if (!userMarker) {
@@ -244,22 +245,18 @@ function updateUserPosition(lat, lng) {
     checkRouteDeviation([lat, lng]);
   }
 
-  // ✅ SUPPRIMER le recentrage automatique
-  // La carte ne se recentrera plus automatiquement
-  // L'utilisateur garde le contrôle manuel
+  // ✅ AUCUN RECENTRAGE AUTOMATIQUE - NAVIGATION 100% LIBRE
 }
 
 /* ===========================================================
-   DÉTECTION DE DÉVIATION DE L'ITINÉRAIRE - NOUVELLE
+   DÉTECTION DE DÉVIATION DE L'ITINÉRAIRE
    =========================================================== */
 function checkRouteDeviation(currentPosition) {
   if (!routePolyline || !destination) return;
 
-  // Vérifier la distance par rapport à la ligne de l'itinéraire
   const routeLatLngs = routePolyline.getLatLngs();
   let minDistance = Infinity;
 
-  // Trouver la distance minimale entre la position actuelle et l'itinéraire
   for (let i = 0; i < routeLatLngs.length - 1; i++) {
     const segmentStart = routeLatLngs[i];
     const segmentEnd = routeLatLngs[i + 1];
@@ -269,11 +266,9 @@ function checkRouteDeviation(currentPosition) {
     }
   }
 
-  // Vérifier aussi la distance jusqu'à la destination
   const distanceToDestination = map.distance(currentPosition, destination);
   const timeSinceLastUpdate = Date.now() - lastRouteUpdate;
 
-  // Conditions pour recalculer l'itinéraire
   const shouldRecalculate = 
     minDistance > ROUTE_UPDATE_DISTANCE_THRESHOLD && 
     timeSinceLastUpdate > ROUTE_UPDATE_TIME_THRESHOLD;
@@ -285,10 +280,9 @@ function checkRouteDeviation(currentPosition) {
 }
 
 /* ===========================================================
-   CALCUL DISTANCE À UN SEGMENT - NOUVELLE
+   CALCUL DISTANCE À UN SEGMENT
    =========================================================== */
 function distanceToSegment(point, segmentStart, segmentEnd) {
-  // Formule de distance point-segment
   const A = point[0] - segmentStart.lat;
   const B = point[1] - segmentStart.lng;
   const C = segmentEnd.lat - segmentStart.lat;
@@ -318,11 +312,11 @@ function distanceToSegment(point, segmentStart, segmentEnd) {
   const dx = point[0] - xx;
   const dy = point[1] - yy;
   
-  return Math.sqrt(dx * dx + dy * dy) * 111319.9; // Conversion en mètres
+  return Math.sqrt(dx * dx + dy * dy) * 111319.9;
 }
 
 /* ===========================================================
-   RECALCUL AUTOMATIQUE DE L'ITINÉRAIRE - CORRIGÉ
+   RECALCUL AUTOMATIQUE DE L'ITINÉRAIRE - SANS RECENTRAGE
    =========================================================== */
 async function recalculateRoute(start, end) {
   if (!start || !end) return;
@@ -340,12 +334,9 @@ async function recalculateRoute(start, end) {
     
     if (!path) throw new Error("Aucun itinéraire trouvé");
 
-    // Mettre à jour la polyligne
+    // Mettre à jour la polyligne SANS RECENTRER
     const coords = path.points.coordinates.map(p => [p[1], p[0]]);
     routePolyline.setLatLngs(coords);
-
-    // ✅ SUPPRIMER le recentrage automatique pendant le recalcul
-    // La carte reste à sa position actuelle
 
     // Mettre à jour les informations
     const km = (path.distance / 1000).toFixed(2);
@@ -353,8 +344,8 @@ async function recalculateRoute(start, end) {
 
     infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 🔄 <b>Itinéraire adapté</b>`;
 
-    // Afficher une notification
-    showTempNotification("🔄 Itinéraire recalculé !", 3000);
+    // Afficher une notification discrète
+    showTempNotification("🔄 Itinéraire recalculé !", 2000);
     
   } catch (error) {
     console.error("Erreur recalcul itinéraire:", error);
@@ -363,10 +354,9 @@ async function recalculateRoute(start, end) {
 }
 
 /* ===========================================================
-   NOTIFICATION TEMPORAIRE - NOUVELLE
+   NOTIFICATION TEMPORAIRE
    =========================================================== */
-function showTempNotification(message, duration = 3000) {
-  // Créer l'élément de notification
+function showTempNotification(message, duration = 2000) {
   const notification = document.createElement("div");
   notification.style.cssText = `
     position: fixed;
@@ -386,7 +376,6 @@ function showTempNotification(message, duration = 3000) {
   notification.textContent = message;
   document.body.appendChild(notification);
 
-  // Ajouter l'animation CSS
   const style = document.createElement('style');
   style.textContent = `
     @keyframes slideDown {
@@ -396,7 +385,6 @@ function showTempNotification(message, duration = 3000) {
   `;
   document.head.appendChild(style);
 
-  // Supprimer après la durée spécifiée
   setTimeout(() => {
     notification.style.animation = 'slideUp 0.3s ease-in';
     setTimeout(() => {
@@ -450,7 +438,7 @@ function popupClientHtml(uid, id, c) {
 }
 
 /* ===========================================================
-   ITINÉRAIRES - CORRIGÉ SANS RECENTRAGE AGRESSIF
+   ITINÉRAIRES - NAVIGATION 100% LIBRE
    =========================================================== */
 async function calculerItineraire(destLat, destLng) {
   routeLayer.clearLayers();
@@ -479,29 +467,13 @@ async function calculerItineraire(destLat, destLng) {
       .addTo(routeLayer)
       .bindPopup("🎯 Destination");
 
-    // ✅ REMPLACER le fitBounds agressif par un recentrage intelligent
-    const bounds = routePolyline.getBounds();
-    
-    if (bounds.isValid()) {
-      // Calculer le centre de l'itinéraire
-      const routeCenter = bounds.getCenter();
-      
-      // Déterminer un zoom approprié (pas trop serré)
-      const idealZoom = Math.min(map.getBoundsZoom(bounds), 15);
-      
-      // Recentrer doucement sur le début de l'itinéraire (votre position)
-      // mais seulement si on est très zoomé ou loin
-      const currentZoom = map.getZoom();
-      if (currentZoom < 13) {
-        map.setView([me.lat, me.lng], Math.max(idealZoom, 13));
-      }
-      // Sinon, la carte reste à sa position actuelle
-    }
+    // ✅ SUPPRIMÉ TOUT RECENTRAGE - La carte reste où elle est
+    // L'utilisateur peut naviguer librement
 
     const km = (path.distance / 1000).toFixed(2);
     const min = Math.round(path.time / 60000);
 
-    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 📍 <b>Navigation active avec recalcul automatique</b>`;
+    infoDiv.innerHTML = `🚗 <b>Distance</b>: ${km} km — ⏱️ <b>Durée</b>: ${min} min — 📍 <b>Navigation active</b>`;
 
     // Démarrer la surveillance de déviation
     startRouteMonitoring();
@@ -513,15 +485,13 @@ async function calculerItineraire(destLat, destLng) {
 }
 
 /* ===========================================================
-   SURVEILLANCE DE L'ITINÉRAIRE - NOUVELLE
+   SURVEILLANCE DE L'ITINÉRAIRE
    =========================================================== */
 function startRouteMonitoring() {
-  // S'assurer qu'aucun intervalle précédent n'est actif
   if (routeRecalculationInterval) {
     clearInterval(routeRecalculationInterval);
   }
   
-  // Vérifier périodiquement la position (toutes les 10 secondes)
   routeRecalculationInterval = setInterval(() => {
     if (userMarker && destination) {
       const currentPos = userMarker.getLatLng();
@@ -560,7 +530,6 @@ function supprimerItineraire() {
   routePolyline = null;
   destination = null;
   
-  // Arrêter la surveillance
   if (routeRecalculationInterval) {
     clearInterval(routeRecalculationInterval);
     routeRecalculationInterval = null;
@@ -693,7 +662,6 @@ function cleanupAfterLogout() {
   if (clientsRef) clientsRef.off();
   clientsRef = null;
 
-  // Arrêter la surveillance d'itinéraire
   if (routeRecalculationInterval) {
     clearInterval(routeRecalculationInterval);
     routeRecalculationInterval = null;
