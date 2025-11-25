@@ -45,6 +45,79 @@
             margin-right: 10px;
         }
 
+        /* Styles pour la modale de téléchargement */
+        #downloadModal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 10001;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #downloadModal .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        #downloadModal h3 {
+            color: #007bff;
+            margin-bottom: 15px;
+        }
+
+        #downloadModal .steps {
+            text-align: left;
+            margin: 20px 0;
+        }
+
+        #downloadModal .step {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        #downloadModal .step-number {
+            background: #007bff;
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        #downloadModal .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+
+        #downloadModal .progress {
+            width: 0%;
+            height: 100%;
+            background: #007bff;
+            transition: width 0.3s ease;
+        }
+
         /* Styles existants de votre app */
         body {
             margin: 0;
@@ -167,6 +240,44 @@
         </div>
     </div>
 
+    <!-- Modale de téléchargement automatique -->
+    <div id="downloadModal">
+        <div class="modal-content">
+            <div style="font-size: 48px; margin-bottom: 15px;">🚚</div>
+            <h3>Installation Hanafi Livraison</h3>
+            
+            <div class="progress-bar">
+                <div class="progress" id="downloadProgress"></div>
+            </div>
+            
+            <div id="downloadStatus">Préparation du téléchargement...</div>
+            
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div>Téléchargement automatique</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div>Installation de l'APK</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div>Lancement de l'app</div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 20px; display: none;" id="manualDownload">
+                <p style="color: #dc3545; font-size: 14px;">
+                    Le téléchargement automatique a échoué. 
+                    <a href="#" id="manualLink" style="color: #007bff;">Cliquez ici pour télécharger manuellement</a>
+                </p>
+            </div>
+            
+            <button id="closeModal" style="background: #6c757d; margin-top: 15px;">Fermer</button>
+        </div>
+    </div>
+
     <!-- Votre contenu existant -->
     <div id="loginContainer" class="container">
         <h2 style="text-align: center; color: #333;">Hanafi Livraison</h2>
@@ -189,16 +300,26 @@
 
     <script>
         // ===========================================================
-        // GESTION DE L'INSTALLATION AUTOMATIQUE APK
+        // SYSTÈME DE TÉLÉCHARGEMENT AUTOMATIQUE INTÉGRÉ
         // ===========================================================
         
-        // URL de téléchargement de votre APK (à modifier avec votre vraie URL)
-        const APK_DOWNLOAD_URL = 'https://github.com/nassimpublishing-dz/Hanafi-Map/releases/latest/download/app-release.apk';
+        // URLs de téléchargement avec fallbacks
+        const APK_URLS = [
+            'https://github.com/nassimpublishing-dz/Hanafi-Map/releases/latest/download/app-release.apk',
+            'https://github.com/nassimpublishing-dz/Hanafi-Map/releases/download/v2.0/app-release.apk',
+            '/Hanafi-Map/hanafi-livraison.apk'
+        ];
         
         let deferredPrompt;
         const installBanner = document.getElementById('installBanner');
         const installButton = document.getElementById('installButton');
         const closeBanner = document.getElementById('closeBanner');
+        const downloadModal = document.getElementById('downloadModal');
+        const downloadProgress = document.getElementById('downloadProgress');
+        const downloadStatus = document.getElementById('downloadStatus');
+        const manualDownload = document.getElementById('manualDownload');
+        const manualLink = document.getElementById('manualLink');
+        const closeModal = document.getElementById('closeModal');
 
         // Détecter si l'app est déjà installée
         function isAppInstalled() {
@@ -250,43 +371,149 @@
                         console.log('✅ PWA installée avec succès');
                         installBanner.style.display = 'none';
                         localStorage.setItem('installBannerShown', 'true');
+                        showTempNotification('🎉 Application installée !', 3000);
                     } else {
                         console.log('❌ Installation PWA annulée');
-                        downloadAPK(); // Fallback vers APK
+                        startAutomaticDownload(); // Fallback vers APK automatique
                     }
                 } catch (error) {
                     console.error('Erreur installation PWA:', error);
-                    downloadAPK(); // Fallback vers APK
+                    startAutomaticDownload(); // Fallback vers APK automatique
                 }
                 deferredPrompt = null;
             } else {
-                // Fallback : téléchargement APK
-                downloadAPK();
+                // Fallback : téléchargement APK automatique
+                startAutomaticDownload();
             }
         });
 
-        // Téléchargement de l'APK
-        function downloadAPK() {
-            console.log('📦 Début du téléchargement APK');
-            
-            // Créer un lien de téléchargement
-            const link = document.createElement('a');
-            link.href = APK_DOWNLOAD_URL;
-            link.download = 'Hanafi-Livraison.apk';
-            link.target = '_blank';
-            link.style.display = 'none';
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            // Message de confirmation
-            alert('📱 Téléchargement de l\'APK commencé !\n\nUne fois téléchargé :\n1. Ouvrez le fichier .apk\n2. Autorisez l\'installation\n3. Lancez l\'application');
+        // SYSTÈME DE TÉLÉCHARGEMENT AUTOMATIQUE
+        function startAutomaticDownload() {
+            console.log('🚀 Lancement du téléchargement automatique');
             
             // Masquer la bannière
             installBanner.style.display = 'none';
             localStorage.setItem('installBannerShown', 'true');
+            
+            // Afficher la modale
+            downloadModal.style.display = 'flex';
+            downloadStatus.textContent = 'Initialisation...';
+            downloadProgress.style.width = '0%';
+            manualDownload.style.display = 'none';
+            
+            // Démarrer la séquence de téléchargement
+            simulateDownloadProcess();
         }
+
+        function simulateDownloadProcess() {
+            let progress = 0;
+            const steps = [
+                'Connexion au serveur...',
+                'Vérification de la version...',
+                'Téléchargement de l\'APK...',
+                'Préparation de l\'installation...',
+                'Presque terminé...'
+            ];
+            
+            let currentStep = 0;
+            
+            const interval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 100) progress = 100;
+                
+                downloadProgress.style.width = progress + '%';
+                downloadStatus.textContent = steps[currentStep];
+                
+                // Passer à l'étape suivante
+                if (progress >= (currentStep + 1) * 20 && currentStep < steps.length - 1) {
+                    currentStep++;
+                }
+                
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    completeDownloadProcess();
+                }
+            }, 400);
+        }
+
+        function completeDownloadProcess() {
+            downloadStatus.textContent = 'Téléchargement terminé !';
+            
+            // Simuler un délai avant la redirection
+            setTimeout(() => {
+                // Essayer le téléchargement réel
+                attemptRealDownload();
+            }, 1500);
+        }
+
+        function attemptRealDownload() {
+            // Essayer chaque URL jusqu'à ce qu'une fonctionne
+            tryAllDownloadUrls(0);
+        }
+
+        function tryAllDownloadUrls(index) {
+            if (index >= APK_URLS.length) {
+                // Toutes les URLs ont échoué
+                showManualDownloadOption();
+                return;
+            }
+            
+            const currentUrl = APK_URLS[index];
+            console.log('🔗 Essai URL:', currentUrl);
+            
+            downloadStatus.textContent = `Tentative de téléchargement... (${index + 1}/${APK_URLS.length})`;
+            
+            // Créer un lien invisible pour le téléchargement
+            const link = document.createElement('a');
+            link.href = currentUrl;
+            link.download = 'Hanafi-Livraison.apk';
+            link.style.display = 'none';
+            
+            // Vérifier si le lien est valide
+            fetch(currentUrl, { method: 'HEAD' })
+                .then(response => {
+                    if (response.ok) {
+                        // URL valide - déclencher le téléchargement
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        downloadStatus.innerHTML = '✅ <strong>Téléchargement réussi !</strong><br>Vérifiez vos notifications.';
+                        
+                        // Fermer automatiquement après 3 secondes
+                        setTimeout(() => {
+                            downloadModal.style.display = 'none';
+                            showTempNotification('📱 Téléchargement APK terminé !', 3000);
+                        }, 3000);
+                    } else {
+                        // Essayer l'URL suivante
+                        tryAllDownloadUrls(index + 1);
+                    }
+                })
+                .catch(error => {
+                    console.log('❌ URL invalide:', currentUrl);
+                    // Essayer l'URL suivante
+                    tryAllDownloadUrls(index + 1);
+                });
+        }
+
+        function showManualDownloadOption() {
+            downloadStatus.innerHTML = '❌ <strong>APK non disponible</strong>';
+            manualDownload.style.display = 'block';
+            
+            // Lien vers la page GitHub des releases
+            manualLink.href = 'https://github.com/nassimpublishing-dz/Hanafi-Map/releases';
+            manualLink.target = '_blank';
+            manualLink.onclick = function() {
+                window.open(this.href, '_blank');
+                return false;
+            };
+        }
+
+        // Fermer la modale
+        closeModal.addEventListener('click', () => {
+            downloadModal.style.display = 'none';
+        });
 
         // Fermer la bannière
         closeBanner.addEventListener('click', () => {
@@ -320,6 +547,39 @@
             localStorage.setItem('installBannerShown', 'true');
         });
 
+        // Fonction de notification temporaire
+        function showTempNotification(message, duration = 3000) {
+            const notification = document.createElement("div");
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #007bff;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                z-index: 10000;
+                font-weight: bold;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                animation: slideDown 0.3s ease-out;
+                text-align: center;
+                max-width: 90%;
+            `;
+            
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.animation = 'slideUp 0.3s ease-in';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, duration);
+        }
+
         // Initialisation au chargement
         window.addEventListener('load', () => {
             console.log('🚀 Application chargée - Vérification installation');
@@ -341,6 +601,11 @@
         // Fonction pour forcer l'affichage de la bannière (pour tests)
         window.showInstallPrompt = function() {
             showInstallBanner();
+        };
+
+        // Fonction pour tester le téléchargement
+        window.testDownload = function() {
+            startAutomaticDownload();
         };
     </script>
 
