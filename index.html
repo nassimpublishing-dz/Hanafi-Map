@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
     
+    <!-- Désactiver les features expérimentales pour éviter les erreurs -->
+    <meta http-equiv="Permissions-Policy" content="browsing-topics=(), run-ad-auction=(), join-ad-interest-group=(), private-state-token-redemption=(), private-state-token-issuance=(), private-aggregation=(), attribution-reporting=(), compute-pressure=()">
+    
     <!-- Styles pour la bannière d'installation -->
     <style>
         #installBanner {
@@ -297,6 +300,35 @@
     <div id="routeSummary"></div>
 
     <button id="logoutBtn">Déconnexion</button>
+
+    <!-- Charger Firebase EN PREMIER -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
+    <script>
+        // ===========================================================
+        // CONFIGURATION FIREBASE - DOIT ÊTRE AVANT TOUT
+        // ===========================================================
+        const firebaseConfig = {
+            // ⚠️ REMPLACEZ PAR VOS VRAIES CLÉS FIREBASE
+            apiKey: "AIzaSyC0XcVxZ6v9v8q8Q6b6r9K5jM8wXx7vF8d",
+            authDomain: "hanafi-livraison.firebaseapp.com",
+            databaseURL: "https://hanafi-livraison-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "hanafi-livraison",
+            storageBucket: "hanafi-livraison.firebasestorage.app",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdef123456"
+        };
+        
+        // Initialiser Firebase IMMÉDIATEMENT
+        try {
+            firebase.initializeApp(firebaseConfig);
+            console.log('✅ Firebase initialisé avec succès');
+        } catch (error) {
+            console.error('❌ Erreur initialisation Firebase:', error);
+        }
+    </script>
 
     <script>
         // ===========================================================
@@ -609,26 +641,7 @@
         };
     </script>
 
-    <!-- Configuration Firebase -->
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyC0XcVxZ6v9v8q8Q6b6r9K5jM8wXx7vF8d",
-            authDomain: "hanafi-livraison.firebaseapp.com",
-            databaseURL: "https://hanafi-livraison-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "hanafi-livraison",
-            storageBucket: "hanafi-livraison.firebasestorage.app",
-            messagingSenderId: "123456789012",
-            appId: "1:123456789012:web:abcdef123456"
-        };
-        
-        // Initialiser Firebase
-        firebase.initializeApp(firebaseConfig);
-    </script>
-
-    <!-- Vos scripts existants -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- Charger Leaflet et votre app.js -->
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="app.js"></script>
 </body>
