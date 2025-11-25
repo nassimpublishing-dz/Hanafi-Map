@@ -5,13 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hanafi Livraison</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="manifest" href="manifest.json">
     
-    <!-- Désactiver les features expérimentales pour éviter les erreurs -->
-    <meta http-equiv="Permissions-Policy" content="browsing-topics=(), run-ad-auction=(), join-ad-interest-group=(), private-state-token-redemption=(), private-state-token-issuance=(), private-aggregation=(), attribution-reporting=(), compute-pressure=()">
+    <!-- Charger Firebase IMMÉDIATEMENT dans le head -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
-    <!-- Styles pour la bannière d'installation -->
     <style>
+        /* STYLES SIMPLIFIÉS - Tout en un seul endroit */
+        
+        /* Reset et base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+        }
+
+        /* Bannière d'installation */
         #installBanner {
             position: fixed;
             bottom: 0;
@@ -48,86 +64,7 @@
             margin-right: 10px;
         }
 
-        /* Styles pour la modale de téléchargement */
-        #downloadModal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.8);
-            z-index: 10001;
-            display: none;
-            justify-content: center;
-            align-items: center;
-        }
-
-        #downloadModal .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            max-width: 400px;
-            width: 90%;
-            text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        }
-
-        #downloadModal h3 {
-            color: #007bff;
-            margin-bottom: 15px;
-        }
-
-        #downloadModal .steps {
-            text-align: left;
-            margin: 20px 0;
-        }
-
-        #downloadModal .step {
-            margin: 10px 0;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-        }
-
-        #downloadModal .step-number {
-            background: #007bff;
-            color: white;
-            width: 25px;
-            height: 25px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 10px;
-            font-size: 14px;
-            font-weight: bold;
-        }
-
-        #downloadModal .progress-bar {
-            width: 100%;
-            height: 6px;
-            background: #e9ecef;
-            border-radius: 3px;
-            margin: 15px 0;
-            overflow: hidden;
-        }
-
-        #downloadModal .progress {
-            width: 0%;
-            height: 100%;
-            background: #007bff;
-            transition: width 0.3s ease;
-        }
-
-        /* Styles existants de votre app */
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f5f5f5;
-        }
-
+        /* Login container */
         .container {
             max-width: 400px;
             margin: 50px auto;
@@ -157,6 +94,7 @@
             background: #0056b3;
         }
 
+        /* Map et contrôles */
         #map {
             width: 100%;
             height: 100vh;
@@ -226,6 +164,46 @@
             font-size: 14px;
             margin-top: 10px;
         }
+
+        /* Modale de téléchargement */
+        #downloadModal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 10001;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #downloadModal .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        #downloadModal .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+
+        #downloadModal .progress {
+            width: 0%;
+            height: 100%;
+            background: #007bff;
+            transition: width 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -255,28 +233,6 @@
             
             <div id="downloadStatus">Préparation du téléchargement...</div>
             
-            <div class="steps">
-                <div class="step">
-                    <div class="step-number">1</div>
-                    <div>Téléchargement automatique</div>
-                </div>
-                <div class="step">
-                    <div class="step-number">2</div>
-                    <div>Installation de l'APK</div>
-                </div>
-                <div class="step">
-                    <div class="step-number">3</div>
-                    <div>Lancement de l'app</div>
-                </div>
-            </div>
-            
-            <div style="margin-top: 20px; display: none;" id="manualDownload">
-                <p style="color: #dc3545; font-size: 14px;">
-                    Le téléchargement automatique a échoué. 
-                    <a href="#" id="manualLink" style="color: #007bff;">Cliquez ici pour télécharger manuellement</a>
-                </p>
-            </div>
-            
             <button id="closeModal" style="background: #6c757d; margin-top: 15px;">Fermer</button>
         </div>
     </div>
@@ -301,46 +257,47 @@
 
     <button id="logoutBtn">Déconnexion</button>
 
-    <!-- Charger Firebase EN PREMIER -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    
     <script>
         // ===========================================================
-        // CONFIGURATION FIREBASE - DOIT ÊTRE AVANT TOUT
+        // CONFIGURATION FIREBASE - EXÉCUTION IMMÉDIATE
         // ===========================================================
-        const firebaseConfig = {
-            // ⚠️ REMPLACEZ PAR VOS VRAIES CLÉS FIREBASE
-            apiKey: "AIzaSyC0XcVxZ6v9v8q8Q6b6r9K5jM8wXx7vF8d",
-            authDomain: "hanafi-livraison.firebaseapp.com",
-            databaseURL: "https://hanafi-livraison-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "hanafi-livraison",
-            storageBucket: "hanafi-livraison.firebasestorage.app",
-            messagingSenderId: "123456789012",
-            appId: "1:123456789012:web:abcdef123456"
-        };
         
-        // Initialiser Firebase IMMÉDIATEMENT
-        try {
-            firebase.initializeApp(firebaseConfig);
-            console.log('✅ Firebase initialisé avec succès');
-        } catch (error) {
-            console.error('❌ Erreur initialisation Firebase:', error);
+        console.log('🚀 Initialisation de Firebase...');
+        
+        // Vérifier que Firebase est chargé
+        if (typeof firebase === 'undefined') {
+            console.error('❌ Firebase non chargé !');
+        } else {
+            console.log('✅ Firebase détecté, initialisation...');
+            
+            const firebaseConfig = {
+                // ⚠️ REMPLACEZ PAR VOS VRAIES CLÉS FIREBASE
+                apiKey: "AIzaSyC0XcVxZ6v9v8q8Q6b6r9K5jM8wXx7vF8d",
+                authDomain: "hanafi-livraison.firebaseapp.com",
+                databaseURL: "https://hanafi-livraison-default-rtdb.europe-west1.firebasedatabase.app",
+                projectId: "hanafi-livraison",
+                storageBucket: "hanafi-livraison.firebasestorage.app",
+                messagingSenderId: "123456789012",
+                appId: "1:123456789012:web:abcdef123456"
+            };
+            
+            try {
+                // Initialiser Firebase
+                firebase.initializeApp(firebaseConfig);
+                console.log('🎉 Firebase initialisé avec succès !');
+                
+                // Tester l'authentification
+                const auth = firebase.auth();
+                console.log('✅ Module auth chargé');
+                
+            } catch (error) {
+                console.error('💥 Erreur initialisation Firebase:', error);
+            }
         }
-    </script>
 
-    <script>
         // ===========================================================
-        // SYSTÈME DE TÉLÉCHARGEMENT AUTOMATIQUE INTÉGRÉ
+        // SYSTÈME DE TÉLÉCHARGEMENT AUTOMATIQUE
         // ===========================================================
-        
-        // URLs de téléchargement avec fallbacks
-        const APK_URLS = [
-            'https://github.com/nassimpublishing-dz/Hanafi-Map/releases/latest/download/app-release.apk',
-            'https://github.com/nassimpublishing-dz/Hanafi-Map/releases/download/v2.0/app-release.apk',
-            '/Hanafi-Map/hanafi-livraison.apk'
-        ];
         
         let deferredPrompt;
         const installBanner = document.getElementById('installBanner');
@@ -349,15 +306,11 @@
         const downloadModal = document.getElementById('downloadModal');
         const downloadProgress = document.getElementById('downloadProgress');
         const downloadStatus = document.getElementById('downloadStatus');
-        const manualDownload = document.getElementById('manualDownload');
-        const manualLink = document.getElementById('manualLink');
         const closeModal = document.getElementById('closeModal');
 
         // Détecter si l'app est déjà installée
         function isAppInstalled() {
-            return window.matchMedia('(display-mode: standalone)').matches || 
-                   window.navigator.standalone ||
-                   document.referrer.includes('android-app://');
+            return window.matchMedia('(display-mode: standalone)').matches;
         }
 
         // Vérifier si on est sur mobile
@@ -370,14 +323,6 @@
             if (isMobileDevice() && !isAppInstalled()) {
                 console.log('📱 Affichage bannière installation');
                 installBanner.style.display = 'block';
-                
-                // Masquer automatiquement après 30 secondes
-                setTimeout(() => {
-                    if (installBanner.style.display === 'block') {
-                        installBanner.style.display = 'none';
-                        localStorage.setItem('installBannerShown', 'true');
-                    }
-                }, 30000);
             }
         }
 
@@ -394,7 +339,6 @@
             console.log('🔄 Début installation');
             
             if (deferredPrompt) {
-                // Installation PWA standard
                 try {
                     deferredPrompt.prompt();
                     const { outcome } = await deferredPrompt.userChoice;
@@ -402,144 +346,41 @@
                     if (outcome === 'accepted') {
                         console.log('✅ PWA installée avec succès');
                         installBanner.style.display = 'none';
-                        localStorage.setItem('installBannerShown', 'true');
-                        showTempNotification('🎉 Application installée !', 3000);
-                    } else {
-                        console.log('❌ Installation PWA annulée');
-                        startAutomaticDownload(); // Fallback vers APK automatique
                     }
                 } catch (error) {
                     console.error('Erreur installation PWA:', error);
-                    startAutomaticDownload(); // Fallback vers APK automatique
+                    startAutomaticDownload();
                 }
                 deferredPrompt = null;
             } else {
-                // Fallback : téléchargement APK automatique
                 startAutomaticDownload();
             }
         });
 
-        // SYSTÈME DE TÉLÉCHARGEMENT AUTOMATIQUE
+        // Téléchargement automatique
         function startAutomaticDownload() {
-            console.log('🚀 Lancement du téléchargement automatique');
-            
-            // Masquer la bannière
+            console.log('🚀 Lancement téléchargement automatique');
             installBanner.style.display = 'none';
-            localStorage.setItem('installBannerShown', 'true');
-            
-            // Afficher la modale
             downloadModal.style.display = 'flex';
-            downloadStatus.textContent = 'Initialisation...';
-            downloadProgress.style.width = '0%';
-            manualDownload.style.display = 'none';
             
-            // Démarrer la séquence de téléchargement
-            simulateDownloadProcess();
-        }
-
-        function simulateDownloadProcess() {
+            // Simulation de téléchargement
             let progress = 0;
-            const steps = [
-                'Connexion au serveur...',
-                'Vérification de la version...',
-                'Téléchargement de l\'APK...',
-                'Préparation de l\'installation...',
-                'Presque terminé...'
-            ];
-            
-            let currentStep = 0;
-            
             const interval = setInterval(() => {
-                progress += Math.random() * 15;
-                if (progress > 100) progress = 100;
-                
+                progress += 10;
                 downloadProgress.style.width = progress + '%';
-                downloadStatus.textContent = steps[currentStep];
-                
-                // Passer à l'étape suivante
-                if (progress >= (currentStep + 1) * 20 && currentStep < steps.length - 1) {
-                    currentStep++;
-                }
+                downloadStatus.textContent = `Téléchargement... ${progress}%`;
                 
                 if (progress >= 100) {
                     clearInterval(interval);
-                    completeDownloadProcess();
+                    downloadStatus.textContent = '✅ Téléchargement terminé !';
+                    
+                    // Ouvrir GitHub Releases après 2 secondes
+                    setTimeout(() => {
+                        window.open('https://github.com/nassimpublishing-dz/Hanafi-Map/releases', '_blank');
+                        downloadModal.style.display = 'none';
+                    }, 2000);
                 }
-            }, 400);
-        }
-
-        function completeDownloadProcess() {
-            downloadStatus.textContent = 'Téléchargement terminé !';
-            
-            // Simuler un délai avant la redirection
-            setTimeout(() => {
-                // Essayer le téléchargement réel
-                attemptRealDownload();
-            }, 1500);
-        }
-
-        function attemptRealDownload() {
-            // Essayer chaque URL jusqu'à ce qu'une fonctionne
-            tryAllDownloadUrls(0);
-        }
-
-        function tryAllDownloadUrls(index) {
-            if (index >= APK_URLS.length) {
-                // Toutes les URLs ont échoué
-                showManualDownloadOption();
-                return;
-            }
-            
-            const currentUrl = APK_URLS[index];
-            console.log('🔗 Essai URL:', currentUrl);
-            
-            downloadStatus.textContent = `Tentative de téléchargement... (${index + 1}/${APK_URLS.length})`;
-            
-            // Créer un lien invisible pour le téléchargement
-            const link = document.createElement('a');
-            link.href = currentUrl;
-            link.download = 'Hanafi-Livraison.apk';
-            link.style.display = 'none';
-            
-            // Vérifier si le lien est valide
-            fetch(currentUrl, { method: 'HEAD' })
-                .then(response => {
-                    if (response.ok) {
-                        // URL valide - déclencher le téléchargement
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        
-                        downloadStatus.innerHTML = '✅ <strong>Téléchargement réussi !</strong><br>Vérifiez vos notifications.';
-                        
-                        // Fermer automatiquement après 3 secondes
-                        setTimeout(() => {
-                            downloadModal.style.display = 'none';
-                            showTempNotification('📱 Téléchargement APK terminé !', 3000);
-                        }, 3000);
-                    } else {
-                        // Essayer l'URL suivante
-                        tryAllDownloadUrls(index + 1);
-                    }
-                })
-                .catch(error => {
-                    console.log('❌ URL invalide:', currentUrl);
-                    // Essayer l'URL suivante
-                    tryAllDownloadUrls(index + 1);
-                });
-        }
-
-        function showManualDownloadOption() {
-            downloadStatus.innerHTML = '❌ <strong>APK non disponible</strong>';
-            manualDownload.style.display = 'block';
-            
-            // Lien vers la page GitHub des releases
-            manualLink.href = 'https://github.com/nassimpublishing-dz/Hanafi-Map/releases';
-            manualLink.target = '_blank';
-            manualLink.onclick = function() {
-                window.open(this.href, '_blank');
-                return false;
-            };
+            }, 200);
         }
 
         // Fermer la modale
@@ -549,93 +390,19 @@
 
         // Fermer la bannière
         closeBanner.addEventListener('click', () => {
-            console.log('❌ Bannière fermée');
             installBanner.style.display = 'none';
-            localStorage.setItem('installBannerShown', 'true');
-            
-            // Re-proposer dans 7 jours
-            const nextShow = new Date();
-            nextShow.setDate(nextShow.getDate() + 7);
-            localStorage.setItem('nextInstallPrompt', nextShow.getTime());
         });
 
-        // Vérifier si on doit afficher la bannière
-        function shouldShowBanner() {
-            const bannerShown = localStorage.getItem('installBannerShown');
-            const nextPrompt = localStorage.getItem('nextInstallPrompt');
-            
-            if (bannerShown === 'true' && nextPrompt) {
-                const now = new Date().getTime();
-                return now >= parseInt(nextPrompt);
-            }
-            
-            return bannerShown !== 'true';
-        }
-
-        // Détection de l'installation réussie
-        window.addEventListener('appinstalled', () => {
-            console.log('🎉 Application installée avec succès !');
-            installBanner.style.display = 'none';
-            localStorage.setItem('installBannerShown', 'true');
-        });
-
-        // Fonction de notification temporaire
-        function showTempNotification(message, duration = 3000) {
-            const notification = document.createElement("div");
-            notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: #007bff;
-                color: white;
-                padding: 12px 20px;
-                border-radius: 8px;
-                z-index: 10000;
-                font-weight: bold;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                animation: slideDown 0.3s ease-out;
-                text-align: center;
-                max-width: 90%;
-            `;
-            
-            notification.textContent = message;
-            document.body.appendChild(notification);
-
-            setTimeout(() => {
-                notification.style.animation = 'slideUp 0.3s ease-in';
-                setTimeout(() => {
-                    if (notification.parentNode) {
-                        notification.parentNode.removeChild(notification);
-                    }
-                }, 300);
-            }, duration);
-        }
-
-        // Initialisation au chargement
+        // Initialisation
         window.addEventListener('load', () => {
-            console.log('🚀 Application chargée - Vérification installation');
+            console.log('📱 Vérification installation...');
             
-            if (isMobileDevice() && !isAppInstalled() && shouldShowBanner()) {
-                // Afficher après 3 secondes
+            if (isMobileDevice() && !isAppInstalled()) {
                 setTimeout(showInstallBanner, 3000);
             }
-            
-            // Si pas de bannière PWA après 5 secondes, proposer l'APK
-            setTimeout(() => {
-                if (isMobileDevice() && !isAppInstalled() && !deferredPrompt && shouldShowBanner()) {
-                    console.log('📱 Aucune PWA disponible - Proposition APK');
-                    showInstallBanner();
-                }
-            }, 5000);
         });
 
-        // Fonction pour forcer l'affichage de la bannière (pour tests)
-        window.showInstallPrompt = function() {
-            showInstallBanner();
-        };
-
-        // Fonction pour tester le téléchargement
+        // Fonction de test
         window.testDownload = function() {
             startAutomaticDownload();
         };
