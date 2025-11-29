@@ -259,6 +259,47 @@
 
     <script>
         // ===========================================================
+        // SYSTÈME HYBRIDE : APK FIXE + APP DYNAMIQUE
+        // ===========================================================
+
+        // URL de l'APK - NE CHANGE JAMAIS
+        const APK_PERMANENT_URL = 'https://github.com/nassimpublishing-dz/Hanafi-Map/releases/download/v1.0/hanafi-livraison.apk';
+
+        // Vérifier et forcer les mises à jour
+        function initializeApp() {
+            const currentVersion = 'v' + new Date().toISOString().split('T')[0];
+            const storedVersion = localStorage.getItem('appVersion');
+            
+            console.log('🔍 Vérification version:', { current: currentVersion, stored: storedVersion });
+            
+            if (storedVersion !== currentVersion) {
+                console.log('🔄 Mise à jour nécessaire');
+                
+                // Nettoyer pour forcer le rechargement
+                if ('caches' in window) {
+                    caches.keys().then(keys => {
+                        keys.forEach(key => {
+                            console.log('🗑️ Nettoyage cache:', key);
+                            caches.delete(key);
+                        });
+                    });
+                }
+                
+                // Mettre à jour la version
+                localStorage.setItem('appVersion', currentVersion);
+                
+                // Recharger silencieusement
+                setTimeout(() => {
+                    console.log('🔄 Rechargement automatique');
+                    window.location.reload();
+                }, 1000);
+            }
+        }
+
+        // Au chargement
+        initializeApp();
+
+        // ===========================================================
         // CONFIGURATION FIREBASE - EXÉCUTION IMMÉDIATE
         // ===========================================================
         
