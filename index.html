@@ -282,7 +282,54 @@
 
     <button id="logoutBtn">Déconnexion</button>
 
+    <!-- CHARGEMENT FIREBASE EN PREMIER -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
     <script>
+        // ===========================================================
+        // CONFIGURATION FIREBASE - EXÉCUTION IMMÉDIATE ET CORRECTE
+        // ===========================================================
+        
+        console.log('🚀 Initialisation de Firebase...');
+        
+        // Vérifier que Firebase est chargé
+        if (typeof firebase === 'undefined') {
+            console.error('❌ Firebase non chargé !');
+        } else {
+            console.log('✅ Firebase détecté, initialisation...');
+            
+            // ⚠️ REMPLACEZ PAR VOS VRAIES CLÉS FIREBASE
+            const firebaseConfig = {
+                apiKey: "AIzaSyC0XcVxZ6v9v8q8Q6b6r9K5jM8wXx7vF8d",
+                authDomain: "hanafi-livraison.firebaseapp.com",
+                databaseURL: "https://hanafi-livraison-default-rtdb.europe-west1.firebasedatabase.app",
+                projectId: "hanafi-livraison",
+                storageBucket: "hanafi-livraison.firebasestorage.app",
+                messagingSenderId: "123456789012",
+                appId: "1:123456789012:web:abcdef123456"
+            };
+            
+            try {
+                // Vérifier si Firebase est déjà initialisé
+                if (!firebase.apps.length) {
+                    // Initialiser Firebase
+                    firebase.initializeApp(firebaseConfig);
+                    console.log('🎉 Firebase initialisé avec succès !');
+                } else {
+                    console.log('✅ Firebase déjà initialisé');
+                }
+                
+                // Tester l'authentification
+                const auth = firebase.auth();
+                console.log('✅ Module auth chargé');
+                
+            } catch (error) {
+                console.error('💥 Erreur initialisation Firebase:', error);
+            }
+        }
+
         // ===========================================================
         // SYSTÈME HYBRIDE : APK FIXE + APP DYNAMIQUE
         // ===========================================================
@@ -371,43 +418,6 @@
                 }
             } else {
                 console.log('❌ Service Worker non supporté');
-            }
-        }
-
-        // ===========================================================
-        // CONFIGURATION FIREBASE - EXÉCUTION IMMÉDIATE
-        // ===========================================================
-        
-        console.log('🚀 Initialisation de Firebase...');
-        
-        // Vérifier que Firebase est chargé
-        if (typeof firebase === 'undefined') {
-            console.error('❌ Firebase non chargé !');
-        } else {
-            console.log('✅ Firebase détecté, initialisation...');
-            
-            const firebaseConfig = {
-                // ⚠️ REMPLACEZ PAR VOS VRAIES CLÉS FIREBASE
-                apiKey: "AIzaSyC0XcVxZ6v9v8q8Q6b6r9K5jM8wXx7vF8d",
-                authDomain: "hanafi-livraison.firebaseapp.com",
-                databaseURL: "https://hanafi-livraison-default-rtdb.europe-west1.firebasedatabase.app",
-                projectId: "hanafi-livraison",
-                storageBucket: "hanafi-livraison.firebasestorage.app",
-                messagingSenderId: "123456789012",
-                appId: "1:123456789012:web:abcdef123456"
-            };
-            
-            try {
-                // Initialiser Firebase
-                firebase.initializeApp(firebaseConfig);
-                console.log('🎉 Firebase initialisé avec succès !');
-                
-                // Tester l'authentification
-                const auth = firebase.auth();
-                console.log('✅ Module auth chargé');
-                
-            } catch (error) {
-                console.error('💥 Erreur initialisation Firebase:', error);
             }
         }
 
@@ -510,25 +520,6 @@
         });
 
         // ===========================================================
-        // UTILITAIRES SERVICE WORKER
-        // ===========================================================
-        async function getServiceWorkerVersion() {
-            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-                return new Promise((resolve) => {
-                    const channel = new MessageChannel();
-                    channel.port1.onmessage = (event) => {
-                        resolve(event.data);
-                    };
-                    navigator.serviceWorker.controller.postMessage(
-                        { type: 'GET_VERSION' },
-                        [channel.port2]
-                    );
-                });
-            }
-            return null;
-        }
-
-        // ===========================================================
         // INITIALISATION COMPLÈTE
         // ===========================================================
         window.addEventListener('load', async () => {
@@ -561,11 +552,6 @@
         };
     </script>
 
-    <!-- Charger Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    
     <!-- Charger Leaflet et votre app.js -->
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="/Hanafi-Map/app.js"></script>
