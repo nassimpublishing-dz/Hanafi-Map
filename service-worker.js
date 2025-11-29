@@ -1,29 +1,18 @@
-// service-worker.js - Version STABLE et SIMPLE
-const CACHE_NAME = 'hanafi-map-v1';
+// service-worker.js - Version CORRIGÉE pour PWA Builder
+const CACHE_NAME = 'hanafi-map-v1-' + new Date().toISOString().split('T')[0];
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  
-  // Chemins de base
-  '/Hanafi-Map/',
-  '/Hanafi-Map/index.html',
-  '/Hanafi-Map/manifest.json',
-  
-  // Ressources principales
-  '/Hanafi-Map/app.js',
-  '/Hanafi-Map/styles.css',
-  
-  // Icones
-  '/Hanafi-Map/icon-192.png',
-  '/Hanafi-Map/icon-512.png',
-  '/Hanafi-Map/favicon.ico',
-  '/Hanafi-Map/magasin-delectronique.png',
-  '/Hanafi-Map/camion-dexpedition.png'
+  './',
+  './index.html',
+  './manifest.json',
+  './app.js',
+  './styles.css',
+  './icon-192.png',
+  './icon-512.png',
+  './favicon.ico'
 ];
 
 // ===========================================================
-// INSTALLATION - Simple et sans erreurs
+// INSTALLATION
 // ===========================================================
 self.addEventListener('install', (event) => {
   console.log('🔧 Service Worker: Installation');
@@ -34,22 +23,21 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('📦 Ouverture du cache');
-        // Tenter de mettre en cache, mais continuer même en cas d'erreur
+        console.log('📦 Ouverture du cache:', CACHE_NAME);
         return cache.addAll(urlsToCache).catch(error => {
           console.log('⚠️ Certaines ressources non mises en cache:', error);
-          // Continuer même si certaines ressources échouent
           return Promise.resolve();
         });
       })
       .then(() => {
         console.log('✅ Installation Service Worker terminée');
+        return self.skipWaiting();
       })
   );
 });
 
 // ===========================================================
-// ACTIVATION - Nettoyage des anciennes versions
+// ACTIVATION
 // ===========================================================
 self.addEventListener('activate', (event) => {
   console.log('✨ Service Worker: Activation');
@@ -58,7 +46,6 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          // Supprimer les anciens caches
           if (cacheName !== CACHE_NAME) {
             console.log('🗑️ Suppression ancien cache:', cacheName);
             return caches.delete(cacheName);
@@ -66,59 +53,64 @@ self.addEventListener('activate', (event) => {
         })
       );
     }).then(() => {
-      // Prendre le contrôle de tous les clients
+      console.log('✅ Activation terminée');
       return self.clients.claim();
     })
   );
 });
 
 // ===========================================================
-// FETCH - Stratégie réseau d'abord, puis cache
+// FETCH - Stratégie Cache First pour les ressources locales
 // ===========================================================
 self.addEventListener('fetch', (event) => {
-  // Ne pas intercepter les requêtes vers GraphHopper
-  if (event.request.url.includes('graphhopper.com')) {
-    return;
+  const url = new URL(event.request.url);
+  
+  // Ignorer les requêtes externes
+  if (url.origin !== location.origin) {
+    // GraphHopper, Firebase, etc.
+    if (url.href.includes('graphhopper.com') || 
+        url.href.includes('firebase') || 
+        url.href.includes('googleapis') ||
+        url.href.includes('gstatic.com') ||
+        url.href.includes('unpkg.com')) {
+      return;
+    }
   }
   
-  // Ne pas intercepter les requêtes Firebase
-  if (event.request.url.includes('firebase') || 
-      event.request.url.includes('googleapis')) {
-    return;
-  }
-  
-  // Pour les autres requêtes : réseau d'abord, puis cache
+  // Pour les ressources locales : Cache First
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Si la réponse est valide, la mettre en cache
-        if (response && response.status === 200 && response.type === 'basic') {
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
+    caches.match(event.request)
+      .then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
         }
-        return response;
-      })
-      .catch((error) => {
-        // En cas d'erreur réseau, essayer le cache
-        console.log('🌐 Erreur réseau, utilisation du cache:', error);
-        return caches.match(event.request)
-          .then((cachedResponse) => {
-            if (cachedResponse) {
-              return cachedResponse;
+        
+        // Si pas en cache, aller sur le réseau
+        return fetch(event.request)
+          .then((response) => {
+            // Vérifier si la réponse est valide
+            if (!response || response.status !== 200 || response.type !== 'basic') {
+              return response;
             }
             
+            // Mettre en cache la nouvelle ressource
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME)
+              .then((cache) => {
+                cache.put(event.request, responseToCache);
+              });
+              
+            return response;
+          })
+          .catch(() => {
             // Fallback pour la navigation
             if (event.request.mode === 'navigate') {
-              return caches.match('/');
+              return caches.match('./index.html');
             }
             
-            // Fallback générique
             return new Response('Ressource non disponible hors ligne', {
               status: 408,
-              statusText: 'Hors ligne'
+              headers: { 'Content-Type': 'text/plain' }
             });
           });
       })
@@ -126,7 +118,7 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ===========================================================
-// MESSAGE - Communication avec l'app
+// MESSAGE
 // ===========================================================
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
@@ -134,4 +126,4 @@ self.addEventListener('message', (event) => {
   }
 });
 
-console.log('✅ Service Worker chargé - Version stable');
+console.log('✅ Service Worker chargé - Version PWA Builder');
