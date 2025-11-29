@@ -4,13 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hanafi Livraison</title>
-    <link rel="stylesheet" href="styles.css">
     
-    <!-- Charger Firebase IMMÉDIATEMENT dans le head -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- META TAGS ESSENTIELS PWA -->
+    <meta name="description" content="Application de livraison pour livreurs - Navigation GPS et gestion de clients">
+    <meta name="theme-color" content="#007bff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Hanafi Livraison">
     
+    <!-- ICONES APPLE -->
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="apple-touch-startup-image" href="icon-512.png">
+    
+    <!-- MANIFEST CORRECT -->
+    <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
+    
+    <!-- STYLES -->
     <style>
         /* STYLES SIMPLIFIÉS - Tout en un seul endroit */
         
@@ -447,8 +456,28 @@
         window.testDownload = function() {
             startAutomaticDownload();
         };
+
+        // ===========================================================
+        // ENREGISTREMENT SERVICE WORKER
+        // ===========================================================
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/Hanafi-Map/service-worker.js')
+                    .then(function(registration) {
+                        console.log('✅ Service Worker enregistré avec succès:', registration.scope);
+                    })
+                    .catch(function(error) {
+                        console.log('❌ Échec enregistrement Service Worker:', error);
+                    });
+            });
+        }
     </script>
 
+    <!-- Charger Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
     <!-- Charger Leaflet et votre app.js -->
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="app.js"></script>
