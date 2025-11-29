@@ -1,5 +1,5 @@
-// service-worker.js - Version FINALE optimisée pour GitHub Pages
-const CACHE_NAME = 'hanafi-map-v2-' + new Date().toISOString().split('T')[0];
+// service-worker.js - Version CORRIGÉE pour icônes
+const CACHE_NAME = 'hanafi-map-v3-' + new Date().toISOString().split('T')[0];
 const urlsToCache = [
   '/Hanafi-Map/',
   '/Hanafi-Map/index.html',
@@ -21,7 +21,7 @@ const urlsToCache = [
 // INSTALLATION
 // ===========================================================
 self.addEventListener('install', (event) => {
-  console.log('🔧 Service Worker: Installation - Version GitHub Pages');
+  console.log('🔧 Service Worker: Installation - Version icônes corrigée');
   
   // Prendre le contrôle immédiatement
   self.skipWaiting();
@@ -30,7 +30,7 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('📦 Ouverture du cache:', CACHE_NAME);
-        console.log('🔄 Mise en cache des ressources GitHub Pages');
+        console.log('🔄 Mise en cache des ressources avec icônes corrigées');
         return cache.addAll(urlsToCache).catch(error => {
           console.log('⚠️ Certaines ressources non mises en cache:', error);
           // Continuer même en cas d'erreur
@@ -70,7 +70,7 @@ self.addEventListener('activate', (event) => {
 });
 
 // ===========================================================
-// FETCH - Stratégie intelligente
+// FETCH - Stratégie intelligente pour icônes
 // ===========================================================
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
@@ -103,8 +103,8 @@ self.addEventListener('fetch', (event) => {
         return fetch(event.request)
           .then((response) => {
             // Vérifier si la réponse est valide pour la mise en cache
-            if (response && response.status === 200 && response.type === 'basic') {
-              // Mettre en cache la nouvelle ressource
+            if (response && response.status === 200) {
+              // Mettre en cache la nouvelle ressource (surtout les icônes)
               const responseToCache = response.clone();
               caches.open(CACHE_NAME)
                 .then((cache) => {
@@ -124,12 +124,24 @@ self.addEventListener('fetch', (event) => {
                      || caches.match('./index.html');
             }
             
-            // Fallback pour les images
+            // Fallback pour les images (surtout les icônes)
             if (event.request.destination === 'image') {
-              return new Response(
-                '<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#007bff"/><text x="50" y="50" font-family="Arial" font-size="10" fill="white" text-anchor="middle">HL</text></svg>',
-                { headers: { 'Content-Type': 'image/svg+xml' } }
-              );
+              // Essayer de servir depuis le cache avec différents chemins
+              const iconPaths = [
+                '/Hanafi-Map/icon-192-new.png',
+                '/Hanafi-Map/icon-512-new.png', 
+                '/Hanafi-Map/apple-touch-icon.png',
+                'icon-192-new.png',
+                'icon-512-new.png'
+              ];
+              
+              for (const path of iconPaths) {
+                return caches.match(path)
+                  .then(iconResponse => {
+                    if (iconResponse) return iconResponse;
+                  })
+                  .catch(() => null);
+              }
             }
             
             // Fallback générique
@@ -143,50 +155,4 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// ===========================================================
-// MESSAGE - Communication avec l'application
-// ===========================================================
-self.addEventListener('message', (event) => {
-  console.log('📨 Message reçu:', event.data);
-  
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-  
-  if (event.data && event.data.type === 'GET_VERSION') {
-    event.ports[0].postMessage({
-      version: CACHE_NAME,
-      cachedUrls: urlsToCache.length
-    });
-  }
-  
-  if (event.data && event.data.type === 'CACHE_URLS') {
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(event.data.urls))
-      .then(() => {
-        event.ports[0].postMessage({ success: true });
-      })
-      .catch(error => {
-        event.ports[0].postMessage({ success: false, error: error.message });
-      });
-  }
-});
-
-// ===========================================================
-// GESTION DE LA CONNEXION
-// ===========================================================
-self.addEventListener('sync', (event) => {
-  console.log('🔄 Sync event:', event.tag);
-  
-  if (event.tag === 'background-sync') {
-    event.waitUntil(doBackgroundSync());
-  }
-});
-
-function doBackgroundSync() {
-  return Promise.resolve();
-}
-
-console.log('✅ Service Worker FINAL chargé - Prêt pour PWA Builder');
-console.log('📁 URLs à mettre en cache:', urlsToCache.length);
-console.log('🔧 Cache name:', CACHE_NAME);
+console.log('✅ Service Worker CORRIGÉ chargé - Icônes optimisées');
