@@ -9,9 +9,7 @@
   "background_color": "#ffffff",
   "orientation": "portrait-primary",
   "lang": "fr",
-  "dir": "ltr",
   "categories": ["business", "navigation", "productivity"],
-  "id": "/Hanafi-Map/",
   
   "icons": [
     {
@@ -25,84 +23,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    },
-    {
-      "src": "/Hanafi-Map/apple-touch-icon.png",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/Hanafi-Map/favicon.ico",
-      "sizes": "32x32",
-      "type": "image/x-icon"
     }
-  ],
-  
-  "screenshots": [
-    {
-      "src": "/Hanafi-Map/screenshot-wide.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "Interface principale de navigation"
-    },
-    {
-      "src": "/Hanafi-Map/screenshot-narrow.jpg",
-      "sizes": "720x1280",
-      "type": "image/jpeg",
-      "form_factor": "narrow",
-      "label": "Vue mobile avec itinéraire"
-    }
-  ],
-  
-  "shortcuts": [
-    {
-      "name": "Nouvelle livraison",
-      "short_name": "Livraison",
-      "description": "Démarrer une nouvelle livraison",
-      "url": "/Hanafi-Map/?action=new-delivery",
-      "icons": [
-        {
-          "src": "/Hanafi-Map/camion-dexpedition.png",
-          "sizes": "96x96",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Rechercher client",
-      "short_name": "Recherche",
-      "description": "Rechercher un client existant",
-      "url": "/Hanafi-Map/?action=search",
-      "icons": [
-        {
-          "src": "/Hanafi-Map/magasin-delectronique.png",
-          "sizes": "96x96",
-          "type": "image/png"
-        }
-      ]
-    }
-  ],
-  
-  "related_applications": [
-    {
-      "platform": "webapp",
-      "url": "https://nassimpublishing-dz.github.io/Hanafi-Map/manifest.json"
-    }
-  ],
-  
-  "prefer_related_applications": false,
-  
-  "features": [
-    "GPS",
-    "Geolocation",
-    "Offline",
-    "Map",
-    "Navigation"
-  ],
-  
-  "edge_side_panel": {
-    "preferred_width": 400
-  }
+  ]
 }
