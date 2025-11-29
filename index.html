@@ -13,17 +13,16 @@
     <meta name="apple-mobile-web-app-title" content="Hanafi Livraison">
     
     <!-- ICONES APPLE -->
-    <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="apple-touch-startup-image" href="icon-512.png">
+    <link rel="apple-touch-icon" href="/Hanafi-Map/apple-touch-icon.png">
     
-    <!-- MANIFEST CORRECT -->
-    <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
+    <!-- MANIFEST AVEC CHEMIN ABSOLU -->
+    <link rel="manifest" href="/Hanafi-Map/manifest.json" crossorigin="use-credentials">
     
-    <!-- STYLES -->
+    <!-- FAVICON -->
+    <link rel="icon" type="image/x-icon" href="/Hanafi-Map/favicon.ico">
+    
     <style>
-        /* STYLES SIMPLIFIÉS - Tout en un seul endroit */
-        
-        /* Reset et base */
+        /* STYLES COMPLETS - Optimisés */
         * {
             margin: 0;
             padding: 0;
@@ -34,6 +33,20 @@
             font-family: Arial, sans-serif;
             background: #f5f5f5;
             margin: 0;
+        }
+
+        /* Indicateur Service Worker */
+        .service-worker-status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: #28a745;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            z-index: 10001;
+            display: none;
         }
 
         /* Bannière d'installation */
@@ -216,6 +229,9 @@
     </style>
 </head>
 <body>
+    <!-- Indicateur Service Worker -->
+    <div class="service-worker-status" id="swStatus">Service Worker: Chargé</div>
+
     <!-- Bannière d'installation APK -->
     <div id="installBanner">
         <div>
@@ -305,8 +321,58 @@
             }
         }
 
-        // Au chargement
-        initializeApp();
+        // ===========================================================
+        // SERVICE WORKER - Gestion optimisée
+        // ===========================================================
+        async function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    // Essayer le chemin absolu GitHub Pages d'abord
+                    const registration = await navigator.serviceWorker.register('/Hanafi-Map/service-worker.js', {
+                        scope: '/Hanafi-Map/'
+                    });
+                    
+                    console.log('✅ Service Worker enregistré avec succès:', registration.scope);
+                    document.getElementById('swStatus').style.display = 'block';
+                    
+                    // Vérifier l'état du Service Worker
+                    if (registration.installing) {
+                        console.log('🔄 Service Worker en cours d\'installation');
+                    } else if (registration.waiting) {
+                        console.log('⏳ Service Worker en attente');
+                    } else if (registration.active) {
+                        console.log('🎉 Service Worker actif');
+                    }
+                    
+                    // Écouter les mises à jour
+                    registration.addEventListener('updatefound', () => {
+                        console.log('🔄 Nouvelle version du Service Worker trouvée');
+                    });
+                    
+                    return registration;
+                    
+                } catch (error) {
+                    console.error('❌ Erreur enregistrement Service Worker:', error);
+                    
+                    // Fallback avec chemin relatif
+                    try {
+                        const fallbackRegistration = await navigator.serviceWorker.register('./service-worker.js');
+                        console.log('✅ Service Worker (fallback) enregistré');
+                        document.getElementById('swStatus').style.display = 'block';
+                        document.getElementById('swStatus').style.background = '#ffc107';
+                        document.getElementById('swStatus').textContent = 'SW: Fallback';
+                        return fallbackRegistration;
+                    } catch (fallbackError) {
+                        console.error('❌ Les deux chemins ont échoué:', fallbackError);
+                        document.getElementById('swStatus').style.display = 'block';
+                        document.getElementById('swStatus').style.background = '#dc3545';
+                        document.getElementById('swStatus').textContent = 'SW: Erreur';
+                    }
+                }
+            } else {
+                console.log('❌ Service Worker non supporté');
+            }
+        }
 
         // ===========================================================
         // CONFIGURATION FIREBASE - EXÉCUTION IMMÉDIATE
@@ -443,34 +509,56 @@
             installBanner.style.display = 'none';
         });
 
-        // Initialisation
-        window.addEventListener('load', () => {
-            console.log('📱 Vérification installation...');
+        // ===========================================================
+        // UTILITAIRES SERVICE WORKER
+        // ===========================================================
+        async function getServiceWorkerVersion() {
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                return new Promise((resolve) => {
+                    const channel = new MessageChannel();
+                    channel.port1.onmessage = (event) => {
+                        resolve(event.data);
+                    };
+                    navigator.serviceWorker.controller.postMessage(
+                        { type: 'GET_VERSION' },
+                        [channel.port2]
+                    );
+                });
+            }
+            return null;
+        }
+
+        // ===========================================================
+        // INITIALISATION COMPLÈTE
+        // ===========================================================
+        window.addEventListener('load', async () => {
+            console.log('🚀 Initialisation de l\'application');
             
+            // Système de mise à jour
+            initializeApp();
+            
+            // Enregistrer le Service Worker
+            await registerServiceWorker();
+            
+            // Vérifier le manifest
+            const manifestLink = document.querySelector('link[rel="manifest"]');
+            if (manifestLink) {
+                console.log('✅ Manifest détecté:', manifestLink.href);
+            }
+            
+            // Vérification installation PWA
+            console.log('📱 Vérification installation...');
             if (isMobileDevice() && !isAppInstalled()) {
                 setTimeout(showInstallBanner, 3000);
             }
+            
+            console.log('🎯 Application prête pour PWA Builder');
         });
 
         // Fonction de test
         window.testDownload = function() {
             startAutomaticDownload();
         };
-
-        // ===========================================================
-        // ENREGISTREMENT SERVICE WORKER
-        // ===========================================================
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/Hanafi-Map/service-worker.js')
-                    .then(function(registration) {
-                        console.log('✅ Service Worker enregistré avec succès:', registration.scope);
-                    })
-                    .catch(function(error) {
-                        console.log('❌ Échec enregistrement Service Worker:', error);
-                    });
-            });
-        }
     </script>
 
     <!-- Charger Firebase -->
@@ -480,6 +568,7 @@
     
     <!-- Charger Leaflet et votre app.js -->
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="app.js"></script>
+    <script src="/Hanafi-Map/app.js"></script>
+    <script src="/Hanafi-Map/firebase-config.js"></script>
 </body>
 </html>
