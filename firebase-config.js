@@ -10,8 +10,14 @@ const firebaseConfig = {
   appId: "1:106630001469:web:6669587f13f8a0eb5b0b54"
 };
 
-// Initialise Firebase (compat)
-firebase.initializeApp(firebaseConfig);
+let firebaseApp = null;
 
-// Expose la DB Realtime globalement (utilis�e par app.js)
-window.db = firebase.database();
+try {
+    firebaseApp = firebase.app();
+    console.log("⚠️ Firebase déjà initialisé, instance existante utilisée.");
+} catch (e) {
+    firebaseApp = firebase.initializeApp(firebaseConfig);
+    console.log("🔥 Firebase initialisé !");
+}
+
+export { firebaseApp };
