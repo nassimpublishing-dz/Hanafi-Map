@@ -4,47 +4,110 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hanafi Livraison</title>
-    
-    <!-- META TAGS ESSENTIELS PWA -->
+
+    <!-- META TAGS PWA -->
     <meta name="description" content="Application de livraison pour livreurs - Navigation GPS et gestion de clients">
     <meta name="theme-color" content="#007bff">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Hanafi Livraison">
     
-    <!-- ICONES APPLE -->
+    <!-- ICONES -->
     <link rel="apple-touch-icon" href="/Hanafi-Map/apple-touch-icon.png">
-    
-    <!-- MANIFEST AVEC CHEMIN ABSOLU -->
     <link rel="manifest" href="/Hanafi-Map/manifest.json">
-
-    <!-- FAVICON -->
     <link rel="icon" type="image/x-icon" href="/Hanafi-Map/favicon.ico">
 
     <style>
-        /* --- TOUT TON CSS ORIGINAL --- */
-        *{margin:0;padding:0;box-sizing:border-box;}
-        body{font-family:Arial,sans-serif;background:#f5f5f5;margin:0;}
-        .service-worker-status{position:fixed;top:10px;left:10px;background:#28a745;color:white;padding:5px 10px;border-radius:15px;font-size:12px;z-index:10001;display:none;}
-        #installBanner{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(135deg,#007bff,#0056b3);color:white;padding:15px;text-align:center;box-shadow:0 -2px 10px rgba(0,0,0,0.3);z-index:10000;display:none;}
-        #installBanner button{background:white;color:#007bff;border:none;padding:10px 20px;margin:0 10px;border-radius:20px;font-weight:bold;cursor:pointer;}
-        #installBanner .close{background:transparent;color:white;border:1px solid white;}
-        .container{max-width:400px;margin:50px auto;padding:20px;background:white;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}
-        input,button{width:100%;padding:12px;margin:8px 0;border:1px solid #ddd;border-radius:5px;box-sizing:border-box;}
-        button{background:#007bff;color:white;border:none;cursor:pointer;}
-        button:hover{background:#0056b3;}
-        #map{width:100%;height:100vh;display:none;}
-        #controls{position:fixed;top:10px;left:10px;right:10px;z-index:1000;display:none;gap:10px;}
-        #searchInput{flex:1;padding:10px;border:1px solid #ddd;border-radius:20px;}
-        #clearSearch{background:#6c757d;color:white;border:none;padding:10px 15px;border-radius:20px;cursor:pointer;display:none;}
-        #routeSummary{position:fixed;top:60px;left:10px;right:10px;background:white;padding:10px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.2);z-index:999;display:none;}
-        #logoutBtn{position:fixed;top:10px;right:10px;background:#dc3545;color:white;border:none;padding:10px 15px;border-radius:20px;cursor:pointer;z-index:1001;display:none;}
-        #logoutBtn:hover{background:#c82333;}
-        .error{color:#dc3545;font-size:14px;margin-top:10px;}
-        #downloadModal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:10001;display:none;justify-content:center;align-items:center;}
-        #downloadModal .modal-content{background:white;padding:30px;border-radius:15px;max-width:400px;width:90%;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.3);}
-        #downloadModal .progress-bar{width:100%;height:6px;background:#e9ecef;border-radius:3px;margin:15px 0;overflow:hidden;}
-        #downloadModal .progress{width:0%;height:100%;background:#007bff;transition:width .3s ease;}
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; }
+        
+        .service-worker-status {
+            position: fixed; top: 10px; left: 10px; background: #28a745; color: white; 
+            padding: 5px 10px; border-radius: 15px; font-size: 12px; z-index: 10001; display: none;
+        }
+        
+        #installBanner {
+            position: fixed; bottom: 0; left: 0; right: 0; 
+            background: linear-gradient(135deg, #007bff, #0056b3); color: white; padding: 15px; 
+            text-align: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.3); z-index: 10000; display: none;
+        }
+        
+        #installBanner button {
+            background: white; color: #007bff; border: none; padding: 10px 20px; 
+            margin: 0 10px; border-radius: 20px; font-weight: bold; cursor: pointer;
+        }
+        
+        #installBanner .close {
+            background: transparent; color: white; border: 1px solid white;
+        }
+        
+        .container {
+            max-width: 400px; margin: 50px auto; padding: 20px; background: white; 
+            border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        input, button {
+            width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; 
+            border-radius: 5px; box-sizing: border-box;
+        }
+
+        button {
+            background: #007bff; color: white; border: none; cursor: pointer;
+        }
+
+        button:hover { background: #0056b3; }
+
+        #map { width: 100%; height: 100vh; display: none; }
+
+        #controls {
+            position: fixed; top: 10px; left: 10px; right: 10px; z-index: 1000; 
+            display: none; gap: 10px;
+        }
+
+        #searchInput {
+            flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px;
+        }
+
+        #clearSearch {
+            background: #6c757d; color: white; border: none; padding: 10px 15px; 
+            border-radius: 20px; cursor: pointer; display: none;
+        }
+
+        #routeSummary {
+            position: fixed; top: 60px; left: 10px; right: 10px; background: white; 
+            padding: 10px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); 
+            z-index: 999; display: none;
+        }
+
+        #logoutBtn {
+            position: fixed; top: 10px; right: 10px; background: #dc3545; color: white; 
+            border: none; padding: 10px 15px; border-radius: 20px; cursor: pointer; 
+            z-index: 1001; display: none;
+        }
+
+        #logoutBtn:hover { background: #c82333; }
+
+        .error { color: #dc3545; font-size: 14px; margin-top: 10px; }
+
+        #downloadModal {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(0,0,0,0.8); z-index: 10001; display: none; 
+            justify-content: center; align-items: center;
+        }
+
+        #downloadModal .modal-content {
+            background: white; padding: 30px; border-radius: 15px; max-width: 400px; 
+            width: 90%; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        #downloadModal .progress-bar {
+            width: 100%; height: 6px; background: #e9ecef; border-radius: 3px; 
+            margin: 15px 0; overflow: hidden;
+        }
+
+        #downloadModal .progress {
+            width: 0%; height: 100%; background: #007bff; transition: width 0.3s ease;
+        }
     </style>
 </head>
 
@@ -80,8 +143,8 @@
     <!-- Login -->
     <div id="loginContainer" class="container">
         <h2 style="text-align:center;color:#333;">Hanafi Livraison</h2>
-        <input type="email" id="email" placeholder="Email">
-        <input type="password" id="password" placeholder="Mot de passe">
+        <input type="email" id="email" placeholder="Email" required>
+        <input type="password" id="password" placeholder="Mot de passe" required>
         <button id="loginBtn">Se connecter</button>
         <div id="loginError" class="error"></div>
     </div>
